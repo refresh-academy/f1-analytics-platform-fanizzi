@@ -2,4 +2,14 @@
 name = "f1-analytics-platform-fanizzi"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastf1",
+    "pandas",
+    "pyarrow",
+]
+
+[tool.uv]
+# Keep cryptography compatible with Intel-based macOS systems.
+constraint-dependencies = [
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
