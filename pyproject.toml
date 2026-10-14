@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastf1",
     "pandas",
+    "psycopg[binary]>=3.3.6",
     "pyarrow",
 ]
 
