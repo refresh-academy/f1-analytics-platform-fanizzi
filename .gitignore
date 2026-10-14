@@ -7,10 +7,23 @@ __pycache__/
 *.py[cod]
 
 # Local environment files that may contain credentials.
-# .env.example will remain a public, version-controlled template.
+# .env.example remains a public, version-controlled template.
 .env
 .env.*
 !.env.example
 
 # System metadata file automatically created by macOS.
 .DS_Store
+
+# Downloaded source data can be recreated by the extraction pipeline.
+# Keep the placeholder so Git preserves the directory structure.
+/data/raw/*
+!/data/raw/.gitkeep
+
+# Generated datasets can be recreated from source data.
+/data/processed/*
+!/data/processed/.gitkeep
+
+# FastF1 cache files are local and can be downloaded again.
+/data/cache/*
+!/data/cache/.gitkeep
