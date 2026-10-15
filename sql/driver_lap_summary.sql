@@ -9,7 +9,7 @@ SELECT
     d.full_name,
     sd.team_name,
     COUNT(*) AS recorded_laps,
-    MIN(f.lap_time_seconds) AS fastest_lap_seconds
+    MIN(f.lap_time_seconds) AS minimum_recorded_lap_seconds
 FROM warehouse.fact_lap AS f
 JOIN warehouse.dim_session AS s
     ON s.session_id = f.session_id
@@ -28,4 +28,4 @@ GROUP BY
     f.driver_number,
     d.full_name,
     sd.team_name
-ORDER BY fastest_lap_seconds, f.driver_number;
+ORDER BY minimum_recorded_lap_seconds, f.driver_number;
