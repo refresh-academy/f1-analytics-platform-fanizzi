@@ -106,13 +106,15 @@ run_sql sql/load_fact_stint.sql
 The first check compares lap and stint counts for each Monza driver.
 The second verifies that each lap belongs to exactly one stint range
 with the same compound. Both checks fail when their assertions fail.
-The two summary queries display recorded laps and stints.
+The three summary queries display recorded laps, individual stints,
+and each driver's compound sequence.
 
 ```bash
 run_sql tests/sql/check_monza_stint_lap_counts.sql
 run_sql tests/sql/check_monza_stint_lap_assignments.sql
 run_sql sql/driver_lap_summary.sql
 run_sql sql/driver_stint_summary.sql
+run_sql sql/driver_strategy_summary.sql
 ```
 
 The count check expects 20 drivers, and the lap assignment check expects
