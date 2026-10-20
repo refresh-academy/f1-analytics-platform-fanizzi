@@ -103,17 +103,20 @@ run_sql sql/load_fact_stint.sql
 
 ## 7. Check and explore the result
 
-The check fails if warehouse lap and stint counts differ for any Monza
-driver. The two summary queries display recorded laps and stints.
+The first check compares lap and stint counts for each Monza driver.
+The second verifies that each lap belongs to exactly one stint range
+with the same compound. Both checks fail when their assertions fail.
+The two summary queries display recorded laps and stints.
 
 ```bash
 run_sql tests/sql/check_monza_stint_lap_counts.sql
+run_sql tests/sql/check_monza_stint_lap_assignments.sql
 run_sql sql/driver_lap_summary.sql
 run_sql sql/driver_stint_summary.sql
 ```
 
-The check expects the 20 drivers observed in this race. It does not yet
-verify the stint assignment and compound of each individual lap.
+The count check expects 20 drivers, and the lap assignment check expects
+1,008 laps. Both expectations describe this specific race snapshot.
 
 ## Optional source exploration
 
