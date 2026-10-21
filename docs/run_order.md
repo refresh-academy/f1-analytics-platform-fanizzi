@@ -2,7 +2,8 @@
 
 This guide describes how to build the current Monza 2024 warehouse from a
 new PostgreSQL database. Run each step in order and stop if a command fails.
-For an existing database, use the relevant checks and queries in step 7.
+For a database built before the lap accuracy flag was added, use the
+migration section below. An up-to-date database can run step 7 directly.
 
 ## 0. Start the environment
 
@@ -107,7 +108,8 @@ The first check compares lap and stint counts for each Monza driver.
 The second verifies that each lap belongs to exactly one stint range
 with the same compound. The third checks the observed missing sector
 times. The fourth compares each complete lap time with its sector sum.
-All four checks fail when their assertions fail.
+The fifth compares FastF1 accuracy flags between staging and the warehouse.
+All five checks fail when their assertions fail.
 The three summary queries display recorded laps, individual stints,
 and each driver's compound sequence.
 
@@ -116,14 +118,38 @@ run_sql tests/sql/check_monza_stint_lap_counts.sql
 run_sql tests/sql/check_monza_stint_lap_assignments.sql
 run_sql tests/sql/check_monza_sector_completeness.sql
 run_sql tests/sql/check_monza_sector_sum.sql
+run_sql tests/sql/check_monza_lap_accuracy.sql
 run_sql sql/driver_lap_summary.sql
 run_sql sql/driver_stint_summary.sql
 run_sql sql/driver_strategy_summary.sql
 ```
 
 The checks expect 20 drivers, 1,008 total laps, 988 laps with all sector
-times, and the observed missing sector values. These expectations describe
+times, 927 True and 81 False values for the FastF1 is_accurate flag,
+and the observed missing sector values. These expectations describe
 this specific race snapshot.
+
+## Update an existing database with lap accuracy
+
+Use this sequence only for a database created before the accuracy
+column was added. Start PostgreSQL and define `run_sql` as in step 0.
+The migration scripts add nullable columns first; the loaders fill
+them with source values before the `NOT NULL` constraints are applied.
+
+```bash
+uv run python src/transformation/transform_monza_2024_laps.py
+run_sql sql/add_staging_lap_accuracy.sql
+uv run --env-file .env python src/loading/load_monza_2024_laps.py
+run_sql sql/require_staging_lap_accuracy.sql
+run_sql sql/add_fact_lap_accuracy.sql
+run_sql sql/load_fact_lap.sql
+run_sql sql/require_fact_lap_accuracy.sql
+run_sql tests/sql/check_monza_lap_accuracy.sql
+```
+
+A new database uses the updated `create_staging_laps.sql` and
+`create_fact_lap.sql` definitions in the main run order; it does
+not need the add-column migration scripts.
 
 ## Optional source exploration
 

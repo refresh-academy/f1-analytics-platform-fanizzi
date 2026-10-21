@@ -18,6 +18,10 @@ def main() -> None:
     if laps["LapNumber"].isna().any() or not laps["LapNumber"].mod(1).eq(0).all():
         raise ValueError("Lap numbers must be present and whole.")
 
+    # Preserve FastF1's timing-quality flag without using it to discard laps.
+    if laps["IsAccurate"].isna().any():
+        raise ValueError("IsAccurate must be present for every lap.")
+
     # Add session identifiers so a lap remains identifiable when
     # we later process more races. Convert durations to seconds.
     processed = pd.DataFrame(
@@ -32,6 +36,7 @@ def main() -> None:
             "sector2_seconds": laps["Sector2Time"].dt.total_seconds(),
             "sector3_seconds": laps["Sector3Time"].dt.total_seconds(),
             "compound": laps["Compound"].astype("string"),
+            "is_accurate": laps["IsAccurate"].astype("bool"),
         }
     )
 

@@ -8,7 +8,8 @@ INSERT INTO warehouse.fact_lap (
     sector1_seconds,
     sector2_seconds,
     sector3_seconds,
-    compound
+    compound,
+    is_accurate
 )
 SELECT
     -- Store the session's identifier instead of repeating its descriptive fields.
@@ -19,7 +20,8 @@ SELECT
     l.sector1_seconds,
     l.sector2_seconds,
     l.sector3_seconds,
-    l.compound
+    l.compound,
+    l.is_accurate
 FROM staging.laps AS l
 JOIN warehouse.dim_session AS s
     -- These three source fields identify the corresponding dimension row.
@@ -35,20 +37,23 @@ ON CONFLICT ON CONSTRAINT fact_lap_pkey DO UPDATE SET
     sector1_seconds = EXCLUDED.sector1_seconds,
     sector2_seconds = EXCLUDED.sector2_seconds,
     sector3_seconds = EXCLUDED.sector3_seconds,
-    compound = EXCLUDED.compound
+    compound = EXCLUDED.compound,
+    is_accurate = EXCLUDED.is_accurate
 
--- Update only if a measurement or compound actually changed.
+-- Update only if a measurement, compound, or quality flag changed.
 -- IS DISTINCT FROM treats NULL versus NULL as unchanged.
 WHERE (
     fact_lap.lap_time_seconds,
     fact_lap.sector1_seconds,
     fact_lap.sector2_seconds,
     fact_lap.sector3_seconds,
-    fact_lap.compound
+    fact_lap.compound,
+    fact_lap.is_accurate
 ) IS DISTINCT FROM (
     EXCLUDED.lap_time_seconds,
     EXCLUDED.sector1_seconds,
     EXCLUDED.sector2_seconds,
     EXCLUDED.sector3_seconds,
-    EXCLUDED.compound
+    EXCLUDED.compound,
+    EXCLUDED.is_accurate
 );

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS staging.laps (
     sector2_seconds DOUBLE PRECISION,
     sector3_seconds DOUBLE PRECISION,
     compound TEXT NOT NULL,
+    is_accurate BOOLEAN NOT NULL,
 
     -- The same driver cannot have the same lap twice in one session.
     CONSTRAINT laps_pkey PRIMARY KEY (

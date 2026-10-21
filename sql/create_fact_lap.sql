@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS warehouse.fact_lap (
     sector2_seconds DOUBLE PRECISION,
     sector3_seconds DOUBLE PRECISION,
     compound TEXT NOT NULL,
+    is_accurate BOOLEAN NOT NULL,
 
     -- Prevent duplicate laps within the same session.
     CONSTRAINT fact_lap_pkey
