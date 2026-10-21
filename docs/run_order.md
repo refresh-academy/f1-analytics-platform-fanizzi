@@ -106,7 +106,8 @@ run_sql sql/load_fact_stint.sql
 The first check compares lap and stint counts for each Monza driver.
 The second verifies that each lap belongs to exactly one stint range
 with the same compound. The third checks the observed missing sector
-times. All three checks fail when their assertions fail.
+times. The fourth compares each complete lap time with its sector sum.
+All four checks fail when their assertions fail.
 The three summary queries display recorded laps, individual stints,
 and each driver's compound sequence.
 
@@ -114,13 +115,15 @@ and each driver's compound sequence.
 run_sql tests/sql/check_monza_stint_lap_counts.sql
 run_sql tests/sql/check_monza_stint_lap_assignments.sql
 run_sql tests/sql/check_monza_sector_completeness.sql
+run_sql tests/sql/check_monza_sector_sum.sql
 run_sql sql/driver_lap_summary.sql
 run_sql sql/driver_stint_summary.sql
 run_sql sql/driver_strategy_summary.sql
 ```
 
-The checks expect 20 drivers, 1,008 laps, and the observed missing sector
-times. These expectations describe this specific race snapshot.
+The checks expect 20 drivers, 1,008 total laps, 988 laps with all sector
+times, and the observed missing sector values. These expectations describe
+this specific race snapshot.
 
 ## Optional source exploration
 
