@@ -110,8 +110,8 @@ with the same compound. The third checks the observed missing sector
 times. The fourth compares each complete lap time with its sector sum.
 The fifth compares FastF1 accuracy flags between staging and the warehouse.
 All five checks fail when their assertions fail.
-The three summary queries display recorded laps, individual stints,
-and each driver's compound sequence.
+The four summary queries display recorded laps, individual stints,
+each driver's compound sequence, and FastF1 timing-quality flags.
 
 ```bash
 run_sql tests/sql/check_monza_stint_lap_counts.sql
@@ -122,6 +122,7 @@ run_sql tests/sql/check_monza_lap_accuracy.sql
 run_sql sql/driver_lap_summary.sql
 run_sql sql/driver_stint_summary.sql
 run_sql sql/driver_strategy_summary.sql
+run_sql sql/driver_lap_accuracy_summary.sql
 ```
 
 The checks expect 20 drivers, 1,008 total laps, 988 laps with all sector
