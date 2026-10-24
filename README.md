@@ -8,23 +8,34 @@ Refresh Academy.
 
 ## Project Status
 
-> Current phase: project setup and local development environment configuration.
+> Current phase: verify that the Monza 2024 batch warehouse can be rebuilt
+> in a separate PostgreSQL database.
 
 The repository currently includes:
 
-- [x] Local Git repository
-- [x] Private GitHub repository
-- [x] Python environment managed with uv
-- [x] Python 3.13 project configuration
-- [ ] Initial repository structure
-- [ ] FastF1 data extraction
-- [ ] Raw Parquet storage
-- [ ] PostgreSQL data warehouse
-- [ ] Data quality checks
+- [x] Git, private GitHub repository, Python 3.13, and uv
+- [x] Initial repository structure
+- [x] FastF1 extraction of the Monza 2024 race
+- [x] Raw and processed Parquet datasets, kept outside version control
+- [x] PostgreSQL staging and analytical warehouse for this race
+- [x] Driver, session, lap, and stint models
+- [x] Repeatable loads and SQL data-quality checks
+- [x] Analytical queries for laps, stints, strategies, and quality flags
+- [ ] Verified rebuild from a new database
+- [ ] Grafana dashboards
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
-- [ ] Grafana dashboards
+
+The current race snapshot contains **1,008 laps from 20 drivers** and
+**50 stints**. FastF1 marks 927 laps with `IsAccurate=True` and 81 with
+`IsAccurate=False`; a False flag does not by itself mean that a lap time
+is wrong or deleted. Race-control deletion information was unavailable
+when this snapshot was extracted.
+
+See [the local run order](docs/run_order.md) for build commands and
+[the data-quality notes](docs/monza_2024_data_quality.md) for the
+observed limitations.
 
 ## Project Overview
 

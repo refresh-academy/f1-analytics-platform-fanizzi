@@ -76,7 +76,7 @@ def main() -> None:
     with psycopg.connect(
         host="127.0.0.1",
         port=5433,
-        dbname="f1_analytics",
+        dbname=os.getenv("F1_DB_NAME", "f1_analytics"),
         user="f1_admin",
         password=os.environ["POSTGRES_PASSWORD"],
     ) as connection:

@@ -24,11 +24,41 @@ For the SQL steps below, define this helper in the same terminal:
 ```bash
 run_sql() {
     docker compose exec -T postgres psql -P pager=off \
-        -U f1_admin -d f1_analytics -v ON_ERROR_STOP=1 < "$1"
+        -U f1_admin -d "${F1_DB_NAME:-f1_analytics}" -v ON_ERROR_STOP=1 < "$1"
 }
 ```
 
-The helper only lasts for the current terminal session.
+The helper only lasts for the current terminal session. By default,
+SQL commands and Python loaders use `f1_analytics`. Set `F1_DB_NAME` in
+the current terminal to use another database for both.
+
+## Rebuild check in a separate database
+
+This procedure has not yet been verified. It creates a second database
+in the same PostgreSQL container. First confirm that its name is unused:
+
+```bash
+docker compose exec -T postgres psql -P pager=off -U f1_admin -d postgres -c "SELECT datname FROM pg_database WHERE datname = 'f1_analytics_smoke';"
+```
+
+If the query returns no rows, create and select the test database:
+
+```bash
+docker compose exec -T postgres createdb -U f1_admin f1_analytics_smoke
+export F1_DB_NAME=f1_analytics_smoke
+```
+
+Define `run_sql` as shown above in the same terminal. Before running
+steps 1 through 7, verify the database selected by both tools:
+
+```bash
+docker compose exec -T postgres psql -P pager=off -U f1_admin -d "$F1_DB_NAME" -c 'SELECT current_database();'
+uv run --env-file .env python -c 'import os; print("Loader database:", os.environ["F1_DB_NAME"])'
+```
+
+After reviewing the rebuild results, run `unset F1_DB_NAME` to return
+to the default database in this terminal. Keep the test database until
+its results have been reviewed.
 
 ## 1. Extract source data
 
