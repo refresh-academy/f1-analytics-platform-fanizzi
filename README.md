@@ -8,8 +8,8 @@ Refresh Academy.
 
 ## Project Status
 
-> Current phase: verify that the Monza 2024 batch warehouse can be rebuilt
-> in a separate PostgreSQL database.
+> Current phase: Monza 2024 batch warehouse rebuilt and validated in a
+> separate local PostgreSQL database.
 
 The repository currently includes:
 
@@ -21,11 +21,15 @@ The repository currently includes:
 - [x] Driver, session, lap, and stint models
 - [x] Repeatable loads and SQL data-quality checks
 - [x] Analytical queries for laps, stints, strategies, and quality flags
-- [ ] Verified rebuild from a new database
+- [x] Verified rebuild in a separate local PostgreSQL database
 - [ ] Grafana dashboards
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
+
+The rebuild used `f1_analytics_smoke` in the same PostgreSQL container.
+All five SQL quality checks passed, and repeating the loads changed
+no rows. A rebuild on another computer has not yet been tested.
 
 The current race snapshot contains **1,008 laps from 20 drivers** and
 **50 stints**. FastF1 marks 927 laps with `IsAccurate=True` and 81 with

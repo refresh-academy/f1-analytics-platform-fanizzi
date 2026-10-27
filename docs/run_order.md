@@ -34,8 +34,8 @@ the current terminal to use another database for both.
 
 ## Rebuild check in a separate database
 
-This procedure has not yet been verified. It creates a second database
-in the same PostgreSQL container. First confirm that its name is unused:
+This procedure was verified with the Monza 2024 snapshot. It creates
+a second database in the same PostgreSQL container. First confirm that its name is unused:
 
 ```bash
 docker compose exec -T postgres psql -P pager=off -U f1_admin -d postgres -c "SELECT datname FROM pg_database WHERE datname = 'f1_analytics_smoke';"
@@ -59,6 +59,13 @@ uv run --env-file .env python -c 'import os; print("Loader database:", os.enviro
 After reviewing the rebuild results, run `unset F1_DB_NAME` to return
 to the default database in this terminal. Keep the test database until
 its results have been reviewed.
+
+The verified local rebuild produced 1 session, 20 driver identities,
+20 session-driver records, 1,008 lap facts, and 50 stint facts. All
+five SQL quality checks and four analysis queries completed. Repeating
+the three staging loaders and five warehouse loads changed no rows.
+The original `f1_analytics` database still contained 1,008 lap facts
+and 50 stint facts. This does not verify setup on another computer.
 
 ## 1. Extract source data
 
