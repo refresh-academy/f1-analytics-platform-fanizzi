@@ -10,5 +10,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  grafana:
+    image: grafana/grafana:13.3.0
+    # Make the web interface available only on this computer.
+    ports:
+      - "127.0.0.1:3000:3000"
+    # Keep Grafana settings and future dashboards across container restarts.
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - postgres
+
 volumes:
   postgres_data:
+  grafana_data:

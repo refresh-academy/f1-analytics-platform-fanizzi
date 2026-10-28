@@ -8,8 +8,8 @@ Refresh Academy.
 
 ## Project Status
 
-> Current phase: Monza 2024 batch warehouse rebuilt and validated in a
-> separate local PostgreSQL database.
+> Current phase: Grafana visualization of the verified Monza 2024
+> batch warehouse.
 
 The repository currently includes:
 
@@ -22,7 +22,8 @@ The repository currently includes:
 - [x] Repeatable loads and SQL data-quality checks
 - [x] Analytical queries for laps, stints, strategies, and quality flags
 - [x] Verified rebuild in a separate local PostgreSQL database
-- [ ] Grafana dashboards
+- [x] Local Grafana connection and first driver-lap dashboard
+- [ ] Additional Grafana charts for stints, sectors, and drivers
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
@@ -125,8 +126,10 @@ The project will be implemented incrementally.
 
 ### Phase 4: Visualization
 
-- Connect Grafana to the analytical database.
-- Build lap, stint, sector, and driver comparison dashboards.
+- Connect Grafana to the analytical database with a read-only PostgreSQL
+  role (verified locally).
+- Build lap, stint, sector, and driver comparison dashboards (first
+  driver-lap table complete; charts remain).
 
 ### Phase 5: Telemetry Replay
 

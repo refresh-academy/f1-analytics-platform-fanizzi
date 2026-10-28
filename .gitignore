@@ -27,3 +27,6 @@ __pycache__/
 # FastF1 cache files are local and can be downloaded again.
 /data/cache/*
 !/data/cache/.gitkeep
+
+# Generate Grafana dashboards locally with this installation's data source UID.
+/dashboards/*.json

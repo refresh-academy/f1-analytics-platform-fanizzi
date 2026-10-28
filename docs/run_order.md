@@ -198,3 +198,81 @@ warehouse:
 uv run python src/extraction/inspect_monza_2024.py
 uv run python src/transformation/profile_monza_2024_laps.py
 ```
+
+## Connect Grafana to the local warehouse
+
+Complete the warehouse build before this section. The Grafana reader is
+created once in `f1_analytics`; do not run its creation script again if
+the role already exists. Its `SELECT` grant covers the warehouse tables
+that exist when the script runs.
+
+```bash
+docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 \
+    -U f1_admin -d f1_analytics < sql/create_grafana_reader.sql
+```
+
+Set a private password interactively, then enable login. Do not put the
+password in a script, Git, or the terminal command line.
+
+```bash
+docker compose exec postgres psql -X -U f1_admin \
+    -d f1_analytics -c '\password grafana_reader'
+docker compose exec postgres psql -X -v ON_ERROR_STOP=1 \
+    -U f1_admin -d f1_analytics -c "ALTER ROLE grafana_reader LOGIN;"
+```
+
+Start Grafana and check its local health endpoint:
+
+```bash
+docker compose up -d grafana
+curl -fsS http://127.0.0.1:3000/api/health
+```
+
+Open `http://127.0.0.1:3000`. On a new Grafana installation, sign in
+with `admin` / `admin` and change the administrator password. Add a
+PostgreSQL data source with these settings:
+
+- Name: `f1_analytics_warehouse_fanizzi`
+- Host URL: `postgres:5432` (the Docker network address)
+- Database name: `f1_analytics`
+- Username: `grafana_reader`
+- Password: the private password set above
+- TLS/SSL mode: `disable` for this local Docker network
+
+Click **Save & test** to verify the connection. The Grafana administrator
+password and the PostgreSQL reader password are separate credentials.
+Grafana settings are stored in the persistent `grafana_data` Docker volume.
+
+## Generate the first dashboard
+
+After saving the PostgreSQL data source, find its UID through Grafana's
+local API. Replace `YOUR_GRAFANA_USERNAME` with your Grafana login name;
+`curl` prompts for that account's password without putting it in the
+command history.
+
+```bash
+curl -fsS -u YOUR_GRAFANA_USERNAME \
+    http://127.0.0.1:3000/api/datasources |
+    uv run python -c 'import json,sys; print([(d["name"], d["uid"]) for d in json.load(sys.stdin)])'
+```
+
+Use the UID shown for `f1_analytics_warehouse_fanizzi` to generate the
+dashboard from the reviewed lap summary query:
+
+```bash
+uv run python grafana/build_dashboard.py --datasource-uid YOUR_DATASOURCE_UID
+```
+
+The generated `dashboards/monza_2024_driver_laps.json` is local and
+ignored by Git because its data source UID belongs to this Grafana
+installation. Grafana reads it through the file provider in
+`grafana/provisioning/dashboards/warehouse.yaml`. The first panel is a
+table of recorded laps by driver; its minimum time is not an official
+fastest-lap result. To change this provisioned dashboard, edit its
+source query or builder script, then regenerate the JSON. Grafana polls
+for changes about every 30 seconds.
+
+After Docker Desktop starts on later days, run `docker compose up -d`
+from the repository root to start both PostgreSQL and Grafana. Use the
+`pg_isready` command from step 0 if PostgreSQL needs time to accept
+connections.

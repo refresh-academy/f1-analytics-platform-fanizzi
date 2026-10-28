@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: f1_analytics_warehouse
+    # Keep the dashboard in a recognizable Grafana folder.
+    folder: F1 Analytics
+    type: file
+    # Polling also detects file changes on Docker bind mounts.
+    updateIntervalSeconds: 30
+    # The JSON in the repository is the source for this dashboard.
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
