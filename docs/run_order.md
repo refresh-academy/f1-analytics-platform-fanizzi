@@ -266,10 +266,18 @@ uv run python grafana/build_dashboard.py --datasource-uid YOUR_DATASOURCE_UID
 The generated `dashboards/monza_2024_driver_laps.json` is local and
 ignored by Git because its data source UID belongs to this Grafana
 installation. Grafana reads it through the file provider in
-`grafana/provisioning/dashboards/warehouse.yaml`. The first panel is a
-table of recorded laps by driver; its minimum time is not an official
-fastest-lap result. To change this provisioned dashboard, edit its
-source query or builder script, then regenerate the JSON. Grafana polls
+`grafana/provisioning/dashboards/warehouse.yaml`.
+The upper panel stacks recorded lap counts for each driver by tyre
+compound (HARD, MEDIUM, SOFT). Its horizontal scale counts laps;
+coloured segments add to each driver's total and do not show race lap
+numbers or stint order. Hover for exact values. Its query lives in
+`sql/grafana_driver_compound_laps.sql`. The table below lists recorded
+laps and minimum lap times; the minimum is not an official fastest-lap
+result. The time picker is hidden because these queries describe a
+fixed race.
+
+To change this provisioned dashboard, edit its source query or builder
+script, then regenerate the JSON. Grafana polls
 for changes about every 30 seconds.
 
 After Docker Desktop starts on later days, run `docker compose up -d`

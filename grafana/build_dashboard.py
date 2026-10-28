@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL_FILE = ROOT / "sql" / "driver_lap_summary.sql"
+COMPOUND_SQL_FILE = ROOT / "sql" / "grafana_driver_compound_laps.sql"
 DASHBOARD_FILE = ROOT / "dashboards" / "monza_2024_driver_laps.json"
 
 
@@ -22,6 +23,9 @@ def main() -> None:
     # The SQL file remains the single source for this panel's query.
     query = SQL_FILE.read_text(encoding="utf-8")
 
+    # Read the compound totals for the stacked bar panel.
+    compound_query = COMPOUND_SQL_FILE.read_text(encoding="utf-8")
+
     # Grafana assigns a data source UID per installation.
     datasource = {
         "type": "grafana-postgresql-datasource",
@@ -33,6 +37,8 @@ def main() -> None:
         "title": "Monza 2024 | Driver Laps",
         "tags": ["f1", "monza-2024"],
         "timezone": "browser",
+        # This fixed 2024 race snapshot does not use a time filter.
+        "timepicker": {"hidden": True},
         "schemaVersion": 41,
         "version": 0,
         "panels": [
@@ -44,7 +50,7 @@ def main() -> None:
                     "it is not an official fastest-lap result."
                 ),
                 "type": "table",
-                "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+                "gridPos": {"h": 12, "w": 24, "x": 0, "y": 18},
                 "datasource": datasource,
                 "targets": [
                     {
@@ -57,6 +63,64 @@ def main() -> None:
                     }
                 ],
                 "options": {"showHeader": True},
+            },
+            {
+                "id": 2,
+                "title": "Recorded race laps by tyre compound (totals)",
+                "description": (
+                    "The horizontal scale counts recorded laps, not race lap "
+                    "numbers. Each colour sums all stints on that compound; "
+                    "segments do not show stint order. Hover for exact counts."
+                ),
+                "type": "barchart",
+                # Use the familiar F1 colours for the three tyre compounds.
+                "fieldConfig": {
+                    "defaults": {
+                        "custom": {"axisLabel": "Recorded laps (stacked count)"}
+                    },
+                    "overrides": [
+                        {
+                            "matcher": {"id": "byName", "options": compound},
+                            "properties": [
+                                {
+                                    "id": "color",
+                                    "value": {
+                                        "mode": "fixed",
+                                        "fixedColor": color,
+                                    },
+                                }
+                            ],
+                        }
+                        for compound, color in (
+                            ("HARD", "#F2F2F2"),
+                            ("MEDIUM", "#FFD500"),
+                            ("SOFT", "#E10600"),
+                        )
+                    ],
+                },
+                "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
+                "datasource": datasource,
+                "targets": [
+                    {
+                        "refId": "A",
+                        "datasource": datasource,
+                        "editorMode": "code",
+                        "rawQuery": True,
+                        "rawSql": compound_query,
+                        "format": "table",
+                    }
+                ],
+                "options": {
+                    "xField": "driver",
+                    "orientation": "horizontal",
+                    "stacking": "normal",
+                    "showValue": "never",
+                    "legend": {
+                        "showLegend": True,
+                        "displayMode": "list",
+                        "placement": "bottom",
+                    },
+                },
             }
         ],
     }

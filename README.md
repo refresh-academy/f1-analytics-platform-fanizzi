@@ -22,8 +22,8 @@ The repository currently includes:
 - [x] Repeatable loads and SQL data-quality checks
 - [x] Analytical queries for laps, stints, strategies, and quality flags
 - [x] Verified rebuild in a separate local PostgreSQL database
-- [x] Local Grafana connection and first driver-lap dashboard
-- [ ] Additional Grafana charts for stints, sectors, and drivers
+- [x] Local Grafana dashboard with driver-lap table and tyre-compound chart
+- [ ] Further Grafana views for stint order, sectors, and driver comparisons
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
@@ -128,8 +128,8 @@ The project will be implemented incrementally.
 
 - Connect Grafana to the analytical database with a read-only PostgreSQL
   role (verified locally).
-- Build lap, stint, sector, and driver comparison dashboards (first
-  driver-lap table complete; charts remain).
+- Build lap, stint, sector, and driver comparison dashboards (driver-lap
+  table and tyre-compound chart complete; further views remain).
 
 ### Phase 5: Telemetry Replay
 
