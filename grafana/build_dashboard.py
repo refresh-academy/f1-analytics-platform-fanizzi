@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SQL_FILE = ROOT / "sql" / "driver_lap_summary.sql"
 COMPOUND_SQL_FILE = ROOT / "sql" / "grafana_driver_compound_laps.sql"
+STINT_SQL_FILE = ROOT / "sql" / "driver_stint_summary.sql"
+LAP_TIME_SQL_FILE = ROOT / "sql" / "grafana_lap_time_comparison.sql"
 DASHBOARD_FILE = ROOT / "dashboards" / "monza_2024_driver_laps.json"
 
 
@@ -25,6 +27,10 @@ def main() -> None:
 
     # Read the compound totals for the stacked bar panel.
     compound_query = COMPOUND_SQL_FILE.read_text(encoding="utf-8")
+
+    stint_query = STINT_SQL_FILE.read_text(encoding="utf-8")
+
+    lap_time_query = LAP_TIME_SQL_FILE.read_text(encoding="utf-8")
 
     # Grafana assigns a data source UID per installation.
     datasource = {
@@ -115,6 +121,82 @@ def main() -> None:
                     "orientation": "horizontal",
                     "stacking": "normal",
                     "showValue": "never",
+                    "legend": {
+                        "showLegend": True,
+                        "displayMode": "list",
+                        "placement": "bottom",
+                    },
+                },
+            },
+            {
+                "id": 3,
+                "title": "Stint sequence by driver (race lap ranges)",
+                "description": (
+                    "One row per recorded stint. First and last lap are "
+                    "inclusive race lap numbers; repeated compounds are "
+                    "separate stints."
+                ),
+                "type": "table",
+                "gridPos": {"h": 16, "w": 24, "x": 0, "y": 30},
+                "datasource": datasource,
+                "targets": [
+                    {
+                        "refId": "A",
+                        "datasource": datasource,
+                        "editorMode": "code",
+                        "rawQuery": True,
+                        "rawSql": stint_query,
+                        "format": "table",
+                    }
+                ],
+                "options": {"showHeader": True},
+            },
+            {
+                "id": 4,
+                "title": "Recorded lap times: Leclerc vs Piastri",
+                "description": (
+                    "One point per recorded lap passing FastF1's basic "
+                    "IsAccurate check. Missing points are not proof of "
+                    "deleted or incorrect times. Race-control deletion "
+                    "data is unavailable; these are not official results."
+                ),
+                "type": "xychart",
+                "gridPos": {"h": 16, "w": 24, "x": 0, "y": 46},
+                "datasource": datasource,
+                "fieldConfig": {
+                    "defaults": {
+                        "custom": {
+                            "show": "points",
+                            "pointSize": {"fixed": 5},
+                            "axisLabel": "Lap time (s)",
+                        }
+                    },
+                    # The x field counts race laps; the y fields show seconds.
+                    "overrides": [
+                        {
+                            "matcher": {"id": "byName", "options": "lap_number"},
+                            "properties": [
+                                {
+                                    "id": "custom.axisLabel",
+                                    "value": "Race lap number",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "targets": [
+                    {
+                        "refId": "A",
+                        "datasource": datasource,
+                        "editorMode": "code",
+                        "rawQuery": True,
+                        "rawSql": lap_time_query,
+                        "format": "table",
+                    }
+                ],
+                "options": {
+                    "mapping": "auto",
+                    "series": [{}],
                     "legend": {
                         "showLegend": True,
                         "displayMode": "list",

@@ -276,6 +276,17 @@ laps and minimum lap times; the minimum is not an official fastest-lap
 result. The time picker is hidden because these queries describe a
 fixed race.
 
+The stint table shows one row per driver and stint, with inclusive
+first and last race lap numbers. Repeated compounds remain separate.
+The XY chart compares Leclerc and Piastri: race lap number is horizontal
+and recorded lap time in seconds is vertical. It shows separate points
+only for laps with FastF1 `IsAccurate=True` (50 of 53 for Leclerc and
+48 of 53 for Piastri). Missing points are excluded by this basic
+timing check, not proven wrong or deleted. Race-control deletion data
+is unavailable, so the chart does not establish official fastest laps
+or finishing positions. Its query is in
+`sql/grafana_lap_time_comparison.sql`.
+
 To change this provisioned dashboard, edit its source query or builder
 script, then regenerate the JSON. Grafana polls
 for changes about every 30 seconds.
