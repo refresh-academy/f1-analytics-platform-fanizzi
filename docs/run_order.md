@@ -82,6 +82,7 @@ These commands save raw Parquet files outside version control.
 uv run python src/transformation/validate_monza_2024_laps.py
 uv run python src/transformation/transform_monza_2024_laps.py
 uv run python src/transformation/transform_monza_2024_results.py
+uv run python src/transformation/transform_monza_2024_classification.py
 uv run python src/transformation/transform_monza_2024_stints.py
 ```
 
@@ -94,6 +95,7 @@ Create the tables before running the Python loaders:
 ```bash
 run_sql sql/create_staging_laps.sql
 run_sql sql/create_staging_drivers.sql
+run_sql sql/create_staging_race_results.sql
 run_sql sql/create_staging_stints.sql
 ```
 
@@ -102,6 +104,7 @@ Load the processed Parquet files:
 ```bash
 uv run --env-file .env python src/loading/load_monza_2024_laps.py
 uv run --env-file .env python src/loading/load_monza_2024_drivers.py
+uv run --env-file .env python src/loading/load_monza_2024_classification.py
 uv run --env-file .env python src/loading/load_monza_2024_stints.py
 ```
 
@@ -126,7 +129,7 @@ run_sql sql/create_session_driver.sql
 run_sql sql/load_session_driver.sql
 ```
 
-## 6. Create and load lap and stint facts
+## 6. Create and load lap, stint, and race-result facts
 
 The driver foreign key can be added after session participation exists.
 Create the fact tables and constraints before loading their rows.
@@ -134,9 +137,11 @@ Create the fact tables and constraints before loading their rows.
 ```bash
 run_sql sql/create_fact_lap.sql
 run_sql sql/create_fact_stint.sql
+run_sql sql/create_fact_race_result.sql
 run_sql sql/add_fact_lap_driver_fkey.sql
 run_sql sql/load_fact_lap.sql
 run_sql sql/load_fact_stint.sql
+run_sql sql/load_fact_race_result.sql
 ```
 
 ## 7. Check and explore the result
@@ -211,6 +216,15 @@ docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 \
     -U f1_admin -d f1_analytics < sql/create_grafana_reader.sql
 ```
 
+If `grafana_reader` already exists from an earlier build, skip its
+creation script. Grant it access to the new race-result table instead:
+
+```bash
+docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 \
+    -U f1_admin -d f1_analytics \
+    -c "GRANT SELECT ON TABLE warehouse.fact_race_result TO grafana_reader;"
+```
+
 Set a private password interactively, then enable login. Do not put the
 password in a script, Git, or the terminal command line.
 
@@ -243,7 +257,7 @@ Click **Save & test** to verify the connection. The Grafana administrator
 password and the PostgreSQL reader password are separate credentials.
 Grafana settings are stored in the persistent `grafana_data` Docker volume.
 
-## Generate the first dashboard
+## Generate the dashboard
 
 After saving the PostgreSQL data source, find its UID through Grafana's
 local API. Replace `YOUR_GRAFANA_USERNAME` with your Grafana login name;
@@ -257,7 +271,7 @@ curl -fsS -u YOUR_GRAFANA_USERNAME \
 ```
 
 Use the UID shown for `f1_analytics_warehouse_fanizzi` to generate the
-dashboard from the reviewed lap summary query:
+dashboard from the SQL queries in this repository:
 
 ```bash
 uv run python grafana/build_dashboard.py --datasource-uid YOUR_DATASOURCE_UID
@@ -286,6 +300,12 @@ timing check, not proven wrong or deleted. Race-control deletion data
 is unavailable, so the chart does not establish official fastest laps
 or finishing positions. Its query is in
 `sql/grafana_lap_time_comparison.sql`.
+
+The race-result chart uses classified positions from the extracted
+FastF1 results: Leclerc is first (the winner) and Hamilton is fifth.
+A lower position number is better, even though its bar is shorter.
+These positions are not calculated from the lap-time chart. The query
+is in `sql/grafana_hamilton_leclerc_result.sql`.
 
 To change this provisioned dashboard, edit its source query or builder
 script, then regenerate the JSON. Grafana polls

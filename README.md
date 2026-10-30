@@ -24,7 +24,8 @@ The repository currently includes:
 - [x] Verified rebuild in a separate local PostgreSQL database
 - [x] Grafana dashboard with lap and stint tables, tyre-compound chart,
   and Leclerc-Piastri lap-time comparison
-- [ ] Further Grafana views for official race results and sectors
+- [x] Grafana comparison of Leclerc and Hamilton using race-result positions
+- [ ] Further Grafana views for sectors
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
@@ -131,7 +132,7 @@ The project will be implemented incrementally.
   role (verified locally).
 - Build lap, stint, sector, and driver comparison dashboards (lap and
   stint tables, compound chart, and two-driver lap-time plot complete;
-  official results and sector views remain).
+  race-result comparison complete; sector views remain).
 
 ### Phase 5: Telemetry Replay
 

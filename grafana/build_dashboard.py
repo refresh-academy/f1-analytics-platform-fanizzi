@@ -10,6 +10,7 @@ SQL_FILE = ROOT / "sql" / "driver_lap_summary.sql"
 COMPOUND_SQL_FILE = ROOT / "sql" / "grafana_driver_compound_laps.sql"
 STINT_SQL_FILE = ROOT / "sql" / "driver_stint_summary.sql"
 LAP_TIME_SQL_FILE = ROOT / "sql" / "grafana_lap_time_comparison.sql"
+RESULT_SQL_FILE = ROOT / "sql" / "grafana_hamilton_leclerc_result.sql"
 DASHBOARD_FILE = ROOT / "dashboards" / "monza_2024_driver_laps.json"
 
 
@@ -31,6 +32,8 @@ def main() -> None:
     stint_query = STINT_SQL_FILE.read_text(encoding="utf-8")
 
     lap_time_query = LAP_TIME_SQL_FILE.read_text(encoding="utf-8")
+
+    result_query = RESULT_SQL_FILE.read_text(encoding="utf-8")
 
     # Grafana assigns a data source UID per installation.
     datasource = {
@@ -202,6 +205,44 @@ def main() -> None:
                         "displayMode": "list",
                         "placement": "bottom",
                     },
+                },
+            },
+            {
+                "id": 5,
+                "title": "Final position: Leclerc (winner) vs Hamilton",
+                "description": (
+                    "Classified race positions from the preserved FastF1 "
+                    "results, not from lap times. Position 1 wins; a lower "
+                    "number is better, even when its bar is shorter."
+                ),
+                "type": "barchart",
+                "gridPos": {"h": 9, "w": 24, "x": 0, "y": 62},
+                "datasource": datasource,
+                "fieldConfig": {
+                    "defaults": {
+                        "decimals": 0,
+                        "custom": {
+                            "axisLabel": "Classified position (1 = winner)"
+                        },
+                    },
+                    "overrides": [],
+                },
+                "targets": [
+                    {
+                        "refId": "A",
+                        "datasource": datasource,
+                        "editorMode": "code",
+                        "rawQuery": True,
+                        "rawSql": result_query,
+                        "format": "table",
+                    }
+                ],
+                "options": {
+                    "xField": "driver",
+                    "orientation": "horizontal",
+                    "stacking": "none",
+                    "showValue": "always",
+                    "legend": {"showLegend": False},
                 },
             }
         ],
