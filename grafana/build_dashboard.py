@@ -11,6 +11,8 @@ COMPOUND_SQL_FILE = ROOT / "sql" / "grafana_driver_compound_laps.sql"
 STINT_SQL_FILE = ROOT / "sql" / "driver_stint_summary.sql"
 LAP_TIME_SQL_FILE = ROOT / "sql" / "grafana_lap_time_comparison.sql"
 RESULT_SQL_FILE = ROOT / "sql" / "grafana_hamilton_leclerc_result.sql"
+SECTOR_SQL_FILE = ROOT / "sql" / "grafana_sector_medians.sql"
+DRIVER_OPTIONS_SQL_FILE = ROOT / "sql" / "grafana_sector_driver_options.sql"
 DASHBOARD_FILE = ROOT / "dashboards" / "monza_2024_driver_laps.json"
 
 
@@ -35,6 +37,12 @@ def main() -> None:
 
     result_query = RESULT_SQL_FILE.read_text(encoding="utf-8")
 
+    # Keep the sector calculation in its reviewed SQL file.
+    sector_query = SECTOR_SQL_FILE.read_text(encoding="utf-8")
+
+    # Both driver selectors use the same list of race participants.
+    driver_options_query = DRIVER_OPTIONS_SQL_FILE.read_text(encoding="utf-8")
+
     # Grafana assigns a data source UID per installation.
     datasource = {
         "type": "grafana-postgresql-datasource",
@@ -48,6 +56,37 @@ def main() -> None:
         "timezone": "browser",
         # This fixed 2024 race snapshot does not use a time filter.
         "timepicker": {"hidden": True},
+        # Two single-choice menus keep the sector chart to two drivers.
+        # __text shows the name and sample size; __value is the race number.
+        "templating": {
+            "list": [
+                {
+                    "name": name,
+                    "label": label,
+                    "type": "query",
+                    "datasource": datasource,
+                    "definition": driver_options_query,
+                    "query": driver_options_query,
+                    "current": {"text": selected_text, "value": number},
+                    "options": [],
+                    "refresh": 1,
+                    "hide": 0,
+                    "multi": False,
+                    "includeAll": False,
+                    "sort": 0,
+                }
+                for name, label, selected_text, number in (
+                    (
+                        "sector_driver_a", "Sector chart only: Driver A",
+                        "Charles Leclerc (50 usable laps)", "16",
+                    ),
+                    (
+                        "sector_driver_b", "Sector chart only: Driver B",
+                        "Oscar Piastri (48 usable laps)", "81",
+                    ),
+                )
+            ]
+        },
         "schemaVersion": 41,
         "version": 0,
         "panels": [
@@ -243,6 +282,80 @@ def main() -> None:
                     "stacking": "none",
                     "showValue": "always",
                     "legend": {"showLegend": False},
+                },
+            },
+            {
+                "id": 6,
+                "title": (
+                    "Median sector times: ${sector_driver_a:text} vs "
+                    "${sector_driver_b:text}"
+                ),
+                "description": (
+                    "The two driver menus above affect only this sector "
+                    "chart; each shows the number of usable laps. Medians "
+                    "use only FastF1 "
+                    "IsAccurate laps with all three sector times. Values "
+                    "are seconds; lower means a shorter median sector "
+                    "time. Tyres and traffic are not controlled for, "
+                    "and these are not official rankings."
+                ),
+                "type": "barchart",
+                "gridPos": {"h": 11, "w": 24, "x": 0, "y": 71},
+                "datasource": datasource,
+                "fieldConfig": {
+                    "defaults": {
+                        "decimals": 3,
+                        "custom": {"axisLabel": "Median sector time (s)"},
+                    },
+                    # Match the SQL fields, then show the selected names
+                    # in the legend instead of the generic A/B labels.
+                    "overrides": [
+                        {
+                            "matcher": {
+                                "id": "byName",
+                                "options": "Driver A (s)",
+                            },
+                            "properties": [
+                                {
+                                    "id": "displayName",
+                                    "value": "${sector_driver_a:text}",
+                                }
+                            ],
+                        },
+                        {
+                            "matcher": {
+                                "id": "byName",
+                                "options": "Driver B (s)",
+                            },
+                            "properties": [
+                                {
+                                    "id": "displayName",
+                                    "value": "${sector_driver_b:text}",
+                                }
+                            ],
+                        },
+                    ],
+                },
+                "targets": [
+                    {
+                        "refId": "A",
+                        "datasource": datasource,
+                        "editorMode": "code",
+                        "rawQuery": True,
+                        "rawSql": sector_query,
+                        "format": "table",
+                    }
+                ],
+                "options": {
+                    "xField": "sector",
+                    "orientation": "horizontal",
+                    "stacking": "none",
+                    "showValue": "always",
+                    "legend": {
+                        "showLegend": True,
+                        "displayMode": "list",
+                        "placement": "bottom",
+                    },
                 },
             }
         ],

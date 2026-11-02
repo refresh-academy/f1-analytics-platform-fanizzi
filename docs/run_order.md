@@ -307,6 +307,22 @@ A lower position number is better, even though its bar is shorter.
 These positions are not calculated from the lap-time chart. The query
 is in `sql/grafana_hamilton_leclerc_result.sql`.
 
+The median sector chart has two dropdowns above the dashboard, labelled
+`Sector chart only: Driver A` and `Sector chart only: Driver B`. They
+affect only that chart; the other panels keep their fixed queries.
+Each option shows the driver's number of usable laps. The default
+comparison is Leclerc (50 laps) against Piastri (48 laps); Tsunoda
+has only 5 usable laps in this snapshot.
+
+The chart shows median sector times in seconds, rounded to three
+decimals. It includes only laps with FastF1 `IsAccurate=True` and all
+three sector times present. Small differences can be hard to see in
+the bars, so hover for values. Tyres and traffic are not controlled
+for; these medians are not official rankings. The calculation is in
+`sql/grafana_sector_medians.sql`, and the dropdown options come from
+`sql/grafana_sector_driver_options.sql`. The median query contains
+Grafana variables and must be given driver values to run in `psql`.
+
 To change this provisioned dashboard, edit its source query or builder
 script, then regenerate the JSON. Grafana polls
 for changes about every 30 seconds.
