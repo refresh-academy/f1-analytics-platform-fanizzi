@@ -13,11 +13,17 @@ def main() -> None:
         "season", "event_name", "session_name", "driver_number",
         "result_position", "classified_position", "laps_completed", "status",
     ]
+    # Load the transformed dataset; column order must match the
+    # placeholders in the INSERT statement below.
     results = pd.read_parquet(source, columns=columns)
     if results.empty:
         raise ValueError("No processed race results were found.")
 
+    # Turn each DataFrame row into a tuple for psycopg.executemany.
+    # Keep the tuple values in the same order as the SQL columns.
     records = list(results.itertuples(index=False, name=None))
+    # Season, event, session, and driver number identify one staging result.
+    # On a repeat run, update only fields whose source values changed.
     insert_sql = """
         INSERT INTO staging.race_results AS target (
             season, event_name, session_name, driver_number,
@@ -38,6 +44,9 @@ def main() -> None:
         )
     """
 
+    # Read the database password from the local environment, never
+    # from source code. The connection commits on success and rolls
+    # back if loading fails.
     with psycopg.connect(
         host="127.0.0.1",
         port=5433,
@@ -47,6 +56,8 @@ def main() -> None:
     ) as connection:
         with connection.cursor() as cursor:
             cursor.executemany(insert_sql, records)
+            # Because the UPSERT skips identical rows, this count is
+            # zero when the same source data is loaded again.
             affected_rows = cursor.rowcount
             cursor.execute(
                 """

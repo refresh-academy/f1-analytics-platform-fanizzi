@@ -10,15 +10,21 @@ def main() -> None:
     columns = [
         "DriverNumber", "Position", "ClassifiedPosition", "Laps", "Status"
     ]
+    # Read only the fields needed for classification. Keep the raw
+    # Parquet snapshot unchanged so the source remains available.
     results = pd.read_parquet(source, columns=columns)
 
     if results.empty:
         raise ValueError("The race results contain no classification records.")
 
+    # Missing driver identifiers or classification text would make
+    # the resulting warehouse rows ambiguous.
     for name in ("DriverNumber", "ClassifiedPosition", "Status"):
         if results[name].isna().any() or results[name].astype(str).str.strip().eq("").any():
             raise ValueError(f"Missing values in {name}.")
 
+    # Convert the source numbers explicitly before storing them as
+    # integers; reject missing, fractional, or invalid values.
     position = pd.to_numeric(results["Position"], errors="raise")
     laps = pd.to_numeric(results["Laps"], errors="raise")
     if position.isna().any() or position.lt(1).any() or position.mod(1).ne(0).any():
@@ -26,12 +32,17 @@ def main() -> None:
     if laps.isna().any() or laps.lt(0).any() or laps.mod(1).ne(0).any():
         raise ValueError("Completed lap counts must be nonnegative whole numbers.")
 
+    # Each driver and result-order position must occur only once in
+    # this race. Exactly one row must identify the first-place result.
     driver_number = results["DriverNumber"].astype(str).str.strip()
     if driver_number.duplicated().any() or position.duplicated().any():
         raise ValueError("Duplicate driver numbers or result positions.")
     if position.eq(1).sum() != 1:
         raise ValueError("Expected exactly one first-place result.")
 
+    # Position orders the source results. ClassifiedPosition remains
+    # text so a retirement marker such as "R" is not lost. Attach the
+    # race identifiers needed to connect these rows to a session.
     classification = pd.DataFrame({
         "season": 2024,
         "event_name": "Italian Grand Prix",
