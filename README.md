@@ -6,6 +6,13 @@ data warehouse with a near-real-time telemetry replay pipeline.
 The project is developed as a learning and portfolio initiative within
 Refresh Academy.
 
+## Verified Local Environment
+
+The project has been developed and run on an Intel Mac (`amd64`) with
+macOS Monterey, Docker Desktop 4.41.2, and Docker Engine 28.1.1.
+These versions describe the verified local setup, not minimum requirements
+for other systems.
+
 ## Project Status
 
 > Current phase: Grafana visualization of the verified Monza 2024
