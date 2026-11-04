@@ -343,3 +343,20 @@ are not implemented yet.
 After Docker Desktop starts, run `docker compose --profile streaming up -d`
 from the repository root to start PostgreSQL, Grafana, and Kafka.
 Check container status with `docker compose --profile streaming ps`.
+
+## Extract the OpenF1 telemetry sample
+
+The replay sample uses OpenF1 data for Leclerc, lap 10, from the same
+Monza 2024 race. The batch warehouse uses the existing FastF1 snapshot.
+
+From the repository root, run:
+`uv run python src/extraction/extract_monza_2024_telemetry_sample.py`
+
+The output directory is `data/raw/openf1_monza_2024_leclerc_lap_10/`.
+It contains `car_data.parquet`, `location.parquet`, and `manifest.json`.
+The manifest records the source, lap record, query window, extraction
+time, and row counts. These local files are ignored by Git.
+
+If the output directory already exists, the extractor stops to preserve
+the snapshot. Keep that snapshot for replay rather than overwriting it.
+See `docs/monza_2024_data_quality.md` for the observed checks and limitations.

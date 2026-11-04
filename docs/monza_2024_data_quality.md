@@ -2,7 +2,7 @@
 
 ## Source and scope
 
-The source is the 2024 Italian Grand Prix race loaded with FastF1 3.8.3.
+The batch source is the 2024 Italian Grand Prix race loaded with FastF1 3.8.3.
 The raw lap extraction contains 1,008 records for 20 drivers. Raw Parquet
 files preserve the extracted source values and are not committed to Git.
 
@@ -48,6 +48,30 @@ If race-control messages become available, extract a separate source
 snapshot, compare it with the current data, and review the transformation
 rules before changing warehouse results.
 
+## OpenF1 sample for telemetry replay
+
+A separate OpenF1 snapshot covers Leclerc (driver 16), lap 10, in the
+same Monza 2024 race (session 9590). Its lap duration is 84.432 seconds,
+matching the FastF1 lap record. FastF1 telemetry and position requests
+returned HTTP 401 during inspection on 2026-11-04.
+
+The requested UTC window is 2024-09-01T13:16:21.155000+00:00 to
+2024-09-01T13:17:45.587000+00:00. OpenF1 describes lap start times as
+approximate, so this is a source-derived sampling window.
+
+The saved snapshot contains 322 car samples and 325 position samples,
+with counts checked against its manifest. Initial API inspection found
+no missing required channel values, invalid timestamps, or duplicate
+timestamps. Maximum observed gaps were 0.481 seconds for car data and
+0.480 seconds for positions.
+
+The two streams retain their own timestamps and source fields in separate
+Parquet files. No interpolation, resampling, or missing-value replacement
+has been applied. These checks do not prove every measurement is accurate.
+Position coordinates are approximate. Kafka publishing is not implemented yet.
+
 ## Reference
 
 - [FastF1 lap timing field definitions](https://github.com/theOehrly/Fast-F1/blob/main/docs/api_reference/timing_data.rst)
+
+- [OpenF1 API documentation](https://openf1.org/docs/)

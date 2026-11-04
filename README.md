@@ -15,8 +15,8 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Kafka infrastructure for historical telemetry replay.
-> The broker is configured and verified locally; publishing is next.
+> Current phase: preparing historical telemetry replay.
+> The OpenF1 sample is extracted and checked; Kafka publishing is next.
 
 The repository currently includes:
 
@@ -34,6 +34,7 @@ The repository currently includes:
 - [x] Grafana comparison of Leclerc and Hamilton using race-result positions
 - [x] Interactive Grafana median-sector comparison with driver selectors
 - [x] Kafka 4.2.2 broker in KRaft mode, verified locally with Docker Compose
+- [x] OpenF1 raw telemetry sample for Leclerc, Monza 2024 lap 10
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
@@ -68,7 +69,7 @@ visualizations.
 
 ## Project Goals
 
-- Extract historical Formula 1 data with FastF1.
+- Extract historical Formula 1 data with FastF1 and OpenF1.
 - Preserve source data in Parquet format.
 - Build reproducible and idempotent data pipelines.
 - Design an analytical model for sessions, drivers, laps, and stints.
@@ -79,10 +80,16 @@ visualizations.
 - Run the infrastructure locally with Docker Compose.
 - Document architectural decisions, data quality rules, and known limitations.
 
-## Data Source
+## Data Sources
 
-The project uses FastF1 to access historical Formula 1 timing and telemetry
-data.
+The batch warehouse uses a previously acquired FastF1 snapshot of Monza
+2024. The replay sample uses OpenF1 car telemetry and positions for
+Leclerc, lap 10, from the same race. Separate raw Parquet files and a
+local manifest preserve the sample's source and extraction details.
+
+New FastF1 archive downloads require authenticated access; see the
+[FastF1 archive access update](https://github.com/theOehrly/Fast-F1/issues/978).
+The OpenF1 sample was acquired through its historical API.
 
 Because public live Formula 1 telemetry APIs are limited, the streaming
 component will use a historical replay approach. Previously recorded telemetry
@@ -103,7 +110,9 @@ flowchart TD
     C --> D[PostgreSQL and TimescaleDB]
     D --> E[Grafana]
 
-    A --> F[Python telemetry replay]
+    I[OpenF1 historical telemetry] --> J[Python telemetry extraction]
+    J --> K[Parquet telemetry sample]
+    K --> F[Python telemetry replay]
     F --> G[Apache Kafka]
     G --> H[Spark Structured Streaming]
     H --> D
@@ -160,7 +169,7 @@ The project will be implemented incrementally.
 
 | Area | Technology |
 |---|---|
-| Data source | FastF1 |
+| Data sources | FastF1 (batch), OpenF1 (telemetry sample) |
 | Programming language | Python |
 | Python environment | uv |
 | Raw storage | Parquet |

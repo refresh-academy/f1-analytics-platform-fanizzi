@@ -377,6 +377,7 @@ dependencies = [
     { name = "pandas" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
+    { name = "requests" },
 ]
 
 [package.metadata]
@@ -385,6 +386,7 @@ requires-dist = [
     { name = "pandas" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pyarrow" },
+    { name = "requests", specifier = ">=2.34.2" },
 ]
 
 [[package]]
