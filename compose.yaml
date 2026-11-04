@@ -23,6 +23,46 @@ services:
     depends_on:
       - postgres
 
+  kafka:
+    image: apache/kafka:4.2.2
+    # Kafka starts only when the streaming profile is selected.
+    profiles: [streaming]
+    hostname: kafka
+    # Publish only the host-facing port, and only on this Mac.
+    # The internal client and controller ports stay on the Compose network.
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      # One node performs both broker and controller roles (KRaft, no ZooKeeper).
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      # A listener accepts connections; its advertised address tells clients
+      # where to connect after they request broker metadata.
+      # Python on the Mac uses localhost:9092; future Docker services
+      # such as Spark will use kafka:19092.
+      KAFKA_LISTENERS: "CONTROLLER://:29093,INTERNAL://:19092,EXTERNAL://:9092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:19092,EXTERNAL://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      # Kafka's internal topics cannot request multiple replicas when
+      # this learning environment has only one broker.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      # Store Kafka records and KRaft metadata in the named volume below.
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      CLUSTER_ID: "x7r6MPZfSUyw9auOT6BBLA"
+      # Limit the Java heap initially; we will measure total memory after startup.
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx768m"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
 volumes:
   postgres_data:
   grafana_data:
+  kafka_data:
