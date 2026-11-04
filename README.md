@@ -15,8 +15,8 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Grafana visualization of the verified Monza 2024
-> batch warehouse.
+> Current phase: Kafka infrastructure for historical telemetry replay.
+> The broker is configured and verified locally; publishing is next.
 
 The repository currently includes:
 
@@ -33,6 +33,7 @@ The repository currently includes:
   and Leclerc-Piastri lap-time comparison
 - [x] Grafana comparison of Leclerc and Hamilton using race-result positions
 - [x] Interactive Grafana median-sector comparison with driver selectors
+- [x] Kafka 4.2.2 broker in KRaft mode, verified locally with Docker Compose
 - [ ] Kafka telemetry replay
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage

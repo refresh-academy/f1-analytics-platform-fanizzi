@@ -331,3 +331,15 @@ After Docker Desktop starts on later days, run `docker compose up -d`
 from the repository root to start both PostgreSQL and Grafana. Use the
 `pg_isready` command from step 0 if PostgreSQL needs time to accept
 connections.
+
+## Kafka broker for telemetry replay
+
+Kafka is a core part of the planned streaming pipeline. Kafka 4.2.2 runs
+as one broker and KRaft controller in the `streaming` Compose profile.
+The profile controls when it runs to conserve local memory; the `kafka_data`
+volume persists across restarts. Telemetry publishing and Spark processing
+are not implemented yet.
+
+After Docker Desktop starts, run `docker compose --profile streaming up -d`
+from the repository root to start PostgreSQL, Grafana, and Kafka.
+Check container status with `docker compose --profile streaming ps`.
