@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "fastf1",
+    "kafka-python>=3.0.12",
     "pandas",
     "psycopg[binary]>=3.3.6",
     "pyarrow",

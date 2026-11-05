@@ -337,8 +337,8 @@ connections.
 Kafka is a core part of the planned streaming pipeline. Kafka 4.2.2 runs
 as one broker and KRaft controller in the `streaming` Compose profile.
 The profile controls when it runs to conserve local memory; the `kafka_data`
-volume persists across restarts. Telemetry publishing and Spark processing
-are not implemented yet.
+volume persists across restarts. Sample publishing and read-back
+verification are implemented; Spark processing is still pending.
 
 After Docker Desktop starts, run `docker compose --profile streaming up -d`
 from the repository root to start PostgreSQL, Grafana, and Kafka.
@@ -360,3 +360,37 @@ time, and row counts. These local files are ignored by Git.
 If the output directory already exists, the extractor stops to preserve
 the snapshot. Keep that snapshot for replay rather than overwriting it.
 See `docs/monza_2024_data_quality.md` for the observed checks and limitations.
+
+## Replay and verify the telemetry sample
+
+Start the services with the `streaming` profile as described above.
+The following commands run from the repository root.
+
+Prepare and inspect the 647 source events:
+`uv run python src/transformation/prepare_monza_2024_replay.py`
+
+Create the topic with one partition and one replica:
+`docker compose --profile streaming exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic f1.telemetry.raw.v1 --partitions 1 --replication-factor 1`
+
+Publish the complete sample at its original pacing:
+`uv run python -m src.streaming.replay_monza_2024 --speed 1`
+
+The producer prints progress after broker acknowledgements. Record its
+replay ID and first and last offsets. These values belong to that execution
+and must not be copied unchanged from an earlier run.
+
+Verify that execution by replacing REPLAY_ID, FIRST_OFFSET, and LAST_OFFSET:
+`uv run python -m src.streaming.verify_monza_2024_replay --replay-id REPLAY_ID --start-offset FIRST_OFFSET --end-offset LAST_OFFSET`
+
+The verifier expects all 647 events in a contiguous interval of partition 0.
+It checks the replay ID, message keys, complete source payloads, event IDs,
+and chronological ordering against the local snapshot.
+
+Each event preserves its historical `event_time`. The producer adds a
+`published_at` timestamp and a new `replay_id` for each execution.
+Running the producer again publishes another replay; source `event_id`
+values remain stable and do not automatically deduplicate separate runs.
+
+Producer idempotence protects retries within one producer session.
+It does not establish exactly-once processing across future consumers or
+databases. Spark processing and streaming dashboards are still pending.

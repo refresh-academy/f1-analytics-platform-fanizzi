@@ -15,8 +15,8 @@ for other systems.
 
 ## Project Status
 
-> Current phase: preparing historical telemetry replay.
-> The OpenF1 sample is extracted and checked; Kafka publishing is next.
+> Current phase: Kafka sample replay verified locally.
+> All 647 events were published and read back; Spark processing is next.
 
 The repository currently includes:
 
@@ -35,7 +35,8 @@ The repository currently includes:
 - [x] Interactive Grafana median-sector comparison with driver selectors
 - [x] Kafka 4.2.2 broker in KRaft mode, verified locally with Docker Compose
 - [x] OpenF1 raw telemetry sample for Leclerc, Monza 2024 lap 10
-- [ ] Kafka telemetry replay
+- [x] Kafka replay of the 647-event Leclerc lap 10 sample,
+  verified by reading it back from the broker
 - [ ] Spark Structured Streaming processing
 - [ ] TimescaleDB telemetry storage
 
