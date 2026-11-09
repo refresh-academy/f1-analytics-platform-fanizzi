@@ -1,10 +1,14 @@
 services:
+  # Store batch data for the warehouse and its analytical dashboards.
   postgres:
     image: postgres:16.15
+    # The image uses these values to initialize a new database volume.
     environment:
       POSTGRES_DB: f1_analytics
       POSTGRES_USER: f1_admin
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Tools on the Mac connect to localhost:5433. Containers on the same
+    # Compose network use postgres:5432, the service name and container port.
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
@@ -18,14 +22,16 @@ services:
     # Keep Grafana settings and future dashboards across container restarts.
     volumes:
       - grafana_data:/var/lib/grafana
+      # Mount dashboard definitions and provisioning files read-only.
       - ./dashboards:/etc/grafana/dashboards:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    # Start PostgreSQL first. It may still be initializing when Grafana starts.
     depends_on:
       - postgres
 
   kafka:
     image: apache/kafka:4.2.2
-    # Kafka starts only when the streaming profile is selected.
+    # Enable the streaming profile or target kafka explicitly to start it.
     profiles: [streaming]
     hostname: kafka
     # Publish only the host-facing port, and only on this Mac.
@@ -37,10 +43,10 @@ services:
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
-      # A listener accepts connections; its advertised address tells clients
+      # A listener accepts connections. Its advertised address tells clients
       # where to connect after they request broker metadata.
-      # Python on the Mac uses localhost:9092; future Docker services
-      # such as Spark will use kafka:19092.
+      # Python on the Mac uses localhost:9092. Spark on the Compose
+      # network uses kafka:19092.
       KAFKA_LISTENERS: "CONTROLLER://:29093,INTERNAL://:19092,EXTERNAL://:9092"
       KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:19092,EXTERNAL://localhost:9092"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
@@ -66,8 +72,9 @@ services:
     image: apache/spark:4.2.1-scala2.13-java17-python3-ubuntu
     # Run Spark jobs explicitly, separately from the daily service startup.
     profiles: [processing]
-    # Limit the whole container; the Java heap below is only part of its memory.
+    # Limit the whole container, including the Java heap and Python workers.
     mem_limit: 1536m
+    # Set the container's CPU quota. local[1] below sets Spark's task concurrency.
     cpus: 1.0
     environment:
       # Driver and Python workers run together inside this local-mode container.
@@ -87,6 +94,8 @@ services:
       - local[1]
       - --driver-memory
       - 512m
+      # Keep the local replay light by disabling the UI and using one partition
+      # for shuffles and for operations that use Spark's default parallelism.
       - --conf
       - spark.ui.enabled=false
       - --conf
@@ -101,8 +110,40 @@ services:
     # Until an application is specified, only display the runtime version.
     command: ["--version"]
 
+  timescaledb:
+    # Pin the TimescaleDB release and use PostgreSQL 16 as its base.
+    image: timescale/timescaledb:2.31.0-pg16
+    # Opt in when testing telemetry storage.
+    # Start this service by itself with docker compose up -d timescaledb.
+    profiles: [telemetry]
+    # Set a hard memory limit for the container on this local Docker setup.
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: f1_telemetry
+      POSTGRES_USER: f1_telemetry_admin
+      # Put the separate telemetry password in the local .env before startup.
+      # The empty fallback lets Compose load other services without that value.
+      POSTGRES_PASSWORD: ${TIMESCALEDB_PASSWORD:-}
+      # Pass the memory budget to the image's database tuning tool at initialization.
+      TS_TUNE_MEMORY: 512MB
+    # Keep telemetry data in its own volume. Containers use timescaledb:5432
+    # on the Compose network, so this service needs no host port mapping.
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      # Probe the TCP listener to check when PostgreSQL accepts connections.
+      # Double dollar signs defer variable expansion to the container's shell.
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+# Named volumes retain each service's state when its container is replaced.
 volumes:
   postgres_data:
   grafana_data:
   kafka_data:
   spark_state:
+  timescaledb_data:
