@@ -338,7 +338,7 @@ Kafka is a core part of the planned streaming pipeline. Kafka 4.2.2 runs
 as one broker and KRaft controller in the `streaming` Compose profile.
 The profile controls when it runs to conserve local memory; the `kafka_data`
 volume persists across restarts. Sample publishing and read-back
-verification are implemented; Spark processing is still pending.
+verification are implemented. Spark can inspect a completed replay.
 
 After Docker Desktop starts, run `docker compose --profile streaming up -d`
 from the repository root to start PostgreSQL, Grafana, and Kafka.
@@ -393,4 +393,24 @@ values remain stable and do not automatically deduplicate separate runs.
 
 Producer idempotence protects retries within one producer session.
 It does not establish exactly-once processing across future consumers or
-databases. Spark processing and streaming dashboards are still pending.
+databases.
+
+## Inspect a completed Kafka replay with Spark
+
+Start Kafka with the `streaming` profile as described above. From the
+repository root, replace `REPLAY_ID` with the ID of a completed replay.
+
+```bash
+docker compose run --rm spark \
+  /opt/spark/app/inspect_monza_2024_stream.py \
+  --replay-id REPLAY_ID
+```
+
+The job uses Spark Structured Streaming to read the available Kafka
+records, print counts and example rows for the selected replay, and exit.
+The local run for Leclerc's lap 10 counted 647 events, including 322 car
+telemetry samples and 325 position samples.
+
+The `spark_state` volume stores a separate checkpoint for each replay ID.
+A second invocation for the same replay resumes from the saved offsets
+and reports zero matching events when there are no new ones.

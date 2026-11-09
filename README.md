@@ -15,8 +15,8 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Kafka sample replay verified locally.
-> All 647 events were published and read back; Spark processing is next.
+> Current phase: Spark inspection of a completed Kafka replay verified locally.
+> Spark read all 647 events. Continuous processing during replay is next.
 
 The repository currently includes:
 
@@ -37,7 +37,8 @@ The repository currently includes:
 - [x] OpenF1 raw telemetry sample for Leclerc, Monza 2024 lap 10
 - [x] Kafka replay of the 647-event Leclerc lap 10 sample,
   verified by reading it back from the broker
-- [ ] Spark Structured Streaming processing
+- [x] Spark Structured Streaming inspection of a completed Kafka replay
+- [ ] Continuous Spark Structured Streaming processing during replay
 - [ ] TimescaleDB telemetry storage
 
 The rebuild used `f1_analytics_smoke` in the same PostgreSQL container.

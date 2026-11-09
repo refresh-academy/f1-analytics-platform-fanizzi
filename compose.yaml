@@ -62,7 +62,47 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
 
+  spark:
+    image: apache/spark:4.2.1-scala2.13-java17-python3-ubuntu
+    # Run Spark jobs explicitly, separately from the daily service startup.
+    profiles: [processing]
+    # Limit the whole container; the Java heap below is only part of its memory.
+    mem_limit: 1536m
+    cpus: 1.0
+    environment:
+      # Driver and Python workers run together inside this local-mode container.
+      SPARK_LOCAL_IP: "127.0.0.1"
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
+    volumes:
+      # Application code is editable on the Mac and read-only inside Spark.
+      - ./src/streaming:/opt/spark/app:ro
+      # Reuse downloaded dependencies and retain query checkpoints between runs.
+      # This existing image directory is owned by the unprivileged spark user.
+      - spark_state:/opt/spark/work-dir
+    entrypoint:
+      - /opt/spark/bin/spark-submit
+      # A single local thread is sufficient for the initial 647-event sample.
+      - --master
+      - local[1]
+      - --driver-memory
+      - 512m
+      - --conf
+      - spark.ui.enabled=false
+      - --conf
+      - spark.sql.shuffle.partitions=1
+      - --conf
+      - spark.default.parallelism=1
+      - --conf
+      - spark.jars.ivy=/opt/spark/work-dir/ivy
+      # Match both the Scala binary version and Spark version of the image.
+      - --packages
+      - org.apache.spark:spark-sql-kafka-0-10_2.13:4.2.1
+    # Until an application is specified, only display the runtime version.
+    command: ["--version"]
+
 volumes:
   postgres_data:
   grafana_data:
   kafka_data:
+  spark_state:
