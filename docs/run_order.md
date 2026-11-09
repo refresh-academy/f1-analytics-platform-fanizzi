@@ -414,3 +414,35 @@ telemetry samples and 325 position samples.
 The `spark_state` volume stores a separate checkpoint for each replay ID.
 A second invocation for the same replay resumes from the saved offsets
 and reports zero matching events when there are no new ones.
+
+## Follow a Kafka replay with Spark
+
+Start Kafka and open two terminals in the repository root. Generate a fresh
+replay ID in terminal 2.
+
+```bash
+uv run python -c 'from uuid import uuid4; print(uuid4())'
+```
+
+In terminal 1, replace `REPLAY_ID` with that UUID and start Spark.
+
+```bash
+docker compose --profile streaming --profile processing run --rm spark \
+  /opt/spark/app/inspect_monza_2024_stream.py \
+  --follow --replay-id REPLAY_ID
+```
+
+Once Spark has started, use the same UUID in terminal 2 to publish the replay.
+
+```bash
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 1 --replay-id REPLAY_ID
+```
+
+Watch the Spark batch counts while the producer publishes events. The local
+test processed 647 events across 18 micro-batches, including 322 car telemetry
+samples and 325 position samples.
+
+After the replay finishes and Spark has displayed the final batch, press
+Ctrl+C in terminal 1 to stop the inspection. Python may print
+`KeyboardInterrupt` when the command is interrupted.

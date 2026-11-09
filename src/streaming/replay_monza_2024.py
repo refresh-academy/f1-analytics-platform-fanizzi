@@ -5,7 +5,7 @@ import json
 import math
 import time
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from kafka import KafkaProducer
 from kafka.serializer import DefaultSerializer, Serializer
@@ -30,6 +30,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--speed", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--replay-id", type=UUID,
+        help="Use a UUID chosen before starting the replay.",
+    )
     args = parser.parse_args()
     if not math.isfinite(args.speed) or args.speed <= 0:
         parser.error("--speed must be finite and positive.")
@@ -40,7 +44,7 @@ def main() -> None:
     if args.limit is not None:
         events = events[:args.limit]
 
-    replay_id = str(uuid4())
+    replay_id = str(args.replay_id or uuid4())
     print(f"Replay ID: {replay_id}", flush=True)
     print(f"Topic: {TOPIC}; events: {len(events)}; speed: {args.speed}x", flush=True)
 

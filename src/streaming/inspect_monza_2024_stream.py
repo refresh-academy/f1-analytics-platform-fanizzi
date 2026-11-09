@@ -1,4 +1,4 @@
-"""Inspect one existing Monza replay using Spark Structured Streaming."""
+"""Inspect one Monza replay using Spark Structured Streaming."""
 
 import argparse
 from collections import Counter
@@ -40,13 +40,16 @@ EVENT_SCHEMA = """
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--replay-id", type=UUID, required=True)
+    parser.add_argument(
+        "--follow", action="store_true",
+        help="Keep listening for events until the query is stopped.",
+    )
     args = parser.parse_args()
     replay_id = str(args.replay_id)
 
-    # Keep progress separate for each replay and inspection-query version.
-    checkpoint = (
-        f"/opt/spark/work-dir/checkpoints/monza_inspect_v1/{replay_id}"
-    )
+    # Give each mode its own offsets so either test can run independently.
+    checkpoint_name = "monza_follow_v1" if args.follow else "monza_inspect_v1"
+    checkpoint = f"/opt/spark/work-dir/checkpoints/{checkpoint_name}/{replay_id}"
     print(f"Inspecting replay: {replay_id}", flush=True)
     print(f"Checkpoint: {checkpoint}", flush=True)
 
@@ -99,6 +102,9 @@ def main() -> None:
                     row["event_type"]: row["count"]
                     for row in cached.groupBy("event_type").count().collect()
                 }
+                # A Kafka batch can contain only events from other replays.
+                if args.follow and not counts:
+                    return
                 totals.update(counts)
                 print(f"Batch {batch_id}: {counts}", flush=True)
 
@@ -124,14 +130,15 @@ def main() -> None:
             finally:
                 cached.unpersist()
 
-        # Process the backlog available at startup, checkpoint progress,
-        # and finish. A later step will introduce an ongoing live query.
+        # Follow mode checks for new records at regular intervals.
+        # The default processes the available backlog and then exits.
+        trigger = {"processingTime": "5 seconds"} if args.follow else {"availableNow": True}
         query = (
             events.writeStream
             .foreachBatch(inspect_batch)
             .outputMode("append")
             .option("checkpointLocation", checkpoint)
-            .trigger(availableNow=True)
+            .trigger(**trigger)
             .start()
         )
         query.awaitTermination()

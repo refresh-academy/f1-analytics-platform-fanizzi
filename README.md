@@ -15,8 +15,8 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Spark inspection of a completed Kafka replay verified locally.
-> Spark read all 647 events. Continuous processing during replay is next.
+> Current phase: Spark inspection during Kafka replay verified locally.
+> Spark read all 647 events in 18 micro-batches. TimescaleDB storage is next.
 
 The repository currently includes:
 
@@ -38,7 +38,7 @@ The repository currently includes:
 - [x] Kafka replay of the 647-event Leclerc lap 10 sample,
   verified by reading it back from the broker
 - [x] Spark Structured Streaming inspection of a completed Kafka replay
-- [ ] Continuous Spark Structured Streaming processing during replay
+- [x] Spark Structured Streaming inspection while the Kafka replay is in progress
 - [ ] TimescaleDB telemetry storage
 
 The rebuild used `f1_analytics_smoke` in the same PostgreSQL container.
