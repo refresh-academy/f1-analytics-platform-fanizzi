@@ -69,7 +69,8 @@ services:
       - kafka_data:/var/lib/kafka/data
 
   spark:
-    image: apache/spark:4.2.1-scala2.13-java17-python3-ubuntu
+    # Build the Spark image with the PostgreSQL adapter for the telemetry writer.
+    build: ./docker/spark
     # Run Spark jobs explicitly, separately from the daily service startup.
     profiles: [processing]
     # Limit the whole container, including the Java heap and Python workers.

@@ -4,7 +4,7 @@ import argparse
 from collections import Counter
 from uuid import UUID
 
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
 TOPIC = "f1.telemetry.raw.v1"
 
@@ -37,6 +37,40 @@ EVENT_SCHEMA = """
 """
 
 
+def read_monza_replay(spark: SparkSession, replay_id: str) -> DataFrame:
+    """Read and decode Kafka events for a single replay."""
+    # Containers reach the broker through its internal Compose address.
+    # earliest applies only to a new query; a saved checkpoint takes
+    # precedence when the same inspection is started again.
+    raw = (
+        spark.readStream.format("kafka")
+        .option("kafka.bootstrap.servers", "kafka:19092")
+        .option("subscribe", TOPIC)
+        .option("startingOffsets", "earliest")
+        .option("maxOffsetsPerTrigger", 1000)
+        .option("failOnDataLoss", "true")
+        .load()
+    )
+
+    # Kafka supplies bytes. Decode JSON explicitly and keep broker offsets
+    # so displayed records can be traced back to their stored messages.
+    return (
+        raw.select(
+            "topic", "partition", "offset",
+            F.col("key").cast("string").alias("kafka_key"),
+            F.from_json(
+                F.col("value").cast("string"),
+                EVENT_SCHEMA,
+                {"mode": "FAILFAST"},
+            ).alias("event"),
+        )
+        .select("topic", "partition", "offset", "kafka_key", "event.*")
+        .filter(F.col("replay_id") == replay_id)
+        .withColumn("event_time_utc", F.to_timestamp("event_time"))
+        .withColumn("published_at_utc", F.to_timestamp("published_at"))
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--replay-id", type=UUID, required=True)
@@ -63,36 +97,7 @@ def main() -> None:
     totals = Counter()
 
     try:
-        # Containers reach the broker through its internal Compose address.
-        # earliest applies only to a new query; a saved checkpoint takes
-        # precedence when the same inspection is started again.
-        raw = (
-            spark.readStream.format("kafka")
-            .option("kafka.bootstrap.servers", "kafka:19092")
-            .option("subscribe", TOPIC)
-            .option("startingOffsets", "earliest")
-            .option("maxOffsetsPerTrigger", 1000)
-            .option("failOnDataLoss", "true")
-            .load()
-        )
-
-        # Kafka supplies bytes. Decode JSON explicitly and keep broker offsets
-        # so displayed records can be traced back to their stored messages.
-        events = (
-            raw.select(
-                "topic", "partition", "offset",
-                F.col("key").cast("string").alias("kafka_key"),
-                F.from_json(
-                    F.col("value").cast("string"),
-                    EVENT_SCHEMA,
-                    {"mode": "FAILFAST"},
-                ).alias("event"),
-            )
-            .select("topic", "partition", "offset", "kafka_key", "event.*")
-            .filter(F.col("replay_id") == replay_id)
-            .withColumn("event_time_utc", F.to_timestamp("event_time"))
-            .withColumn("published_at_utc", F.to_timestamp("published_at"))
-        )
+        events = read_monza_replay(spark, replay_id)
 
         def inspect_batch(batch, batch_id):
             # Several displays reuse this batch, so cache it temporarily.
