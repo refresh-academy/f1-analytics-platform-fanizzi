@@ -15,8 +15,10 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Spark inspection during Kafka replay verified locally.
-> Spark read all 647 events in 18 micro-batches. TimescaleDB storage is next.
+> Current phase: Kafka-to-TimescaleDB streaming writes verified locally.
+> Spark stored all 647 replay events in 18 micro-batches while publication
+> was in progress. The Grafana telemetry dashboard and window-based metrics
+> are the next steps.
 
 The repository currently includes:
 
@@ -39,7 +41,18 @@ The repository currently includes:
   verified by reading it back from the broker
 - [x] Spark Structured Streaming inspection of a completed Kafka replay
 - [x] Spark Structured Streaming inspection while the Kafka replay is in progress
-- [ ] TimescaleDB telemetry storage
+- [x] TimescaleDB hypertable for replay telemetry
+- [x] Spark-to-TimescaleDB writes for completed and in-progress replays
+- [x] Duplicate handling verified by republishing the same replay
+- [ ] Grafana telemetry replay dashboard
+- [ ] Window-based telemetry metrics
+
+On 2026-11-11, the replay at original pacing stored 647 events in
+`f1_telemetry` across 18 nonempty micro-batches. SQL confirmed 322 car
+samples and 325 position samples. A separate test on 2026-11-10 republished
+the same replay ID and inserted zero additional rows. The primary key
+combines replay ID, event time, and event ID to identify repeated samples
+within each replay.
 
 The rebuild used `f1_analytics_smoke` in the same PostgreSQL container.
 All five SQL quality checks passed, and repeating the loads changed
@@ -57,17 +70,17 @@ observed limitations.
 
 ## Project Overview
 
-The platform will process Formula 1 data through two complementary workflows:
+The platform processes Formula 1 data through two complementary workflows.
 
 1. A batch pipeline for historical analysis.
 2. A streaming pipeline that replays historical telemetry as a live event stream.
 
-The batch pipeline will organize sessions, drivers, laps, sectors, stints,
-compounds, and telemetry metadata into an analytical data warehouse.
+The batch pipeline organizes sessions, drivers, laps, sector times, stints,
+tyre compounds, and race results in PostgreSQL.
 
-The streaming pipeline will publish historical telemetry samples at controlled
-intervals, process them with time-based calculations, and update live
-visualizations.
+The streaming pipeline publishes historical telemetry samples through Kafka
+at controlled intervals. Spark Structured Streaming writes them to TimescaleDB.
+Window-based calculations and the Grafana telemetry dashboard are the next steps.
 
 ## Project Goals
 
@@ -93,15 +106,14 @@ New FastF1 archive downloads require authenticated access; see the
 [FastF1 archive access update](https://github.com/theOehrly/Fast-F1/issues/978).
 The OpenF1 sample was acquired through its historical API.
 
-Because public live Formula 1 telemetry APIs are limited, the streaming
-component will use a historical replay approach. Previously recorded telemetry
-samples will be published at controlled intervals to simulate data arriving
-from a car during a session.
+The streaming component uses historical replay. Previously recorded telemetry
+samples are published at controlled intervals to simulate data arriving from
+a car during a session.
 
-The replay will preserve two separate time concepts:
+Each stored event preserves two timestamps.
 
-- **Event time:** when the telemetry sample occurred in the historical session.
-- **Processing time:** when the sample is published and processed during replay.
+- **Event time (`event_time`)** records when the sample occurred in the historical session.
+- **Publication time (`published_at`)** records when the producer published the sample during replay.
 
 ## Planned Architecture
 
@@ -155,10 +167,11 @@ The project will be implemented incrementally.
 
 ### Phase 5: Telemetry Replay
 
-- Publish historical telemetry events through Kafka.
-- Process events with Spark Structured Streaming.
-- Calculate window-based metrics.
-- Store telemetry and processed metrics in TimescaleDB.
+- Publish historical telemetry events through Kafka (verified locally).
+- Process events with Spark Structured Streaming (verified locally).
+- Store replay telemetry in TimescaleDB (verified locally).
+- Calculate window-based metrics (planned).
+- Store calculated metrics in TimescaleDB (planned).
 
 ### Phase 6: Reliability and Documentation
 

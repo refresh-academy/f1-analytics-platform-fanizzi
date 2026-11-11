@@ -5,6 +5,9 @@ new PostgreSQL database. Run each step in order and stop if a command fails.
 For a database built before the lap accuracy flag was added, use the
 migration section below. An up-to-date database can run step 7 directly.
 
+The later sections cover Kafka replay, Spark inspection, and TimescaleDB
+storage of the OpenF1 telemetry sample.
+
 ## 0. Start the environment
 
 The ignored `.env` file must define `POSTGRES_PASSWORD`. Run commands from
@@ -334,11 +337,12 @@ connections.
 
 ## Kafka broker for telemetry replay
 
-Kafka is a core part of the planned streaming pipeline. Kafka 4.2.2 runs
+Kafka carries the telemetry replay in the streaming pipeline. Kafka 4.2.2 runs
 as one broker and KRaft controller in the `streaming` Compose profile.
 The profile controls when it runs to conserve local memory; the `kafka_data`
 volume persists across restarts. Sample publishing and read-back
-verification are implemented. Spark can inspect a completed replay.
+verification are implemented. Spark can inspect replays and write them
+to TimescaleDB, including while the producer is publishing.
 
 After Docker Desktop starts, run `docker compose --profile streaming up -d`
 from the repository root to start PostgreSQL, Grafana, and Kafka.
@@ -387,9 +391,10 @@ It checks the replay ID, message keys, complete source payloads, event IDs,
 and chronological ordering against the local snapshot.
 
 Each event preserves its historical `event_time`. The producer adds a
-`published_at` timestamp and a new `replay_id` for each execution.
-Running the producer again publishes another replay; source `event_id`
-values remain stable and do not automatically deduplicate separate runs.
+`published_at` timestamp and generates a new `replay_id` by default.
+Use `--replay-id` to select an explicit UUID. Running the producer again
+publishes messages at new Kafka offsets. Source `event_id` values remain
+stable, and the TimescaleDB writer deduplicates them within a replay.
 
 Producer idempotence protects retries within one producer session.
 It does not establish exactly-once processing across future consumers or
@@ -397,8 +402,14 @@ databases.
 
 ## Inspect a completed Kafka replay with Spark
 
-Start Kafka with the `streaming` profile as described above. From the
-repository root, replace `REPLAY_ID` with the ID of a completed replay.
+Start Kafka with the `streaming` profile as described above. Build the
+Spark image before its first use, and rebuild it after Dockerfile changes.
+
+```bash
+docker compose --profile processing build spark
+```
+
+From the repository root, replace `REPLAY_ID` with the ID of a completed replay.
 
 ```bash
 docker compose run --rm spark \
@@ -446,3 +457,203 @@ samples and 325 position samples.
 After the replay finishes and Spark has displayed the final batch, press
 Ctrl+C in terminal 1 to stop the inspection. Python may print
 `KeyboardInterrupt` when the command is interrupted.
+
+## Store telemetry replays in TimescaleDB
+
+The `telemetry` profile provides TimescaleDB 2.31.0 on PostgreSQL 16.
+Its database is `f1_telemetry`, its user is `f1_telemetry_admin`, and its
+data is stored in `timescaledb_data`. Containers connect to
+`timescaledb:5432` through the Compose network.
+
+The ignored `.env` file must define a nonempty `TIMESCALEDB_PASSWORD`
+alongside the existing `POSTGRES_PASSWORD`. The local setup generated
+the telemetry password with `openssl rand -hex 24` and saved it in `.env`.
+Keep both passwords private.
+
+Start the four services and build the Spark image with these commands.
+
+```bash
+docker compose --profile streaming --profile telemetry up -d --wait \
+  postgres grafana kafka timescaledb
+docker compose --profile processing build spark
+```
+
+The Dockerfile installs `psycopg[binary]==3.3.6`, matching `uv.lock`.
+Spark receives `TIMESCALEDB_PASSWORD` through `run --env` when the writer
+is launched. The application code is mounted from `src/streaming`.
+
+Define this SQL helper in each terminal where you run telemetry queries.
+
+```bash
+run_telemetry_sql() {
+    docker compose --profile telemetry exec -T timescaledb sh -c \
+        'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -w -P pager=off -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"' \
+        sh "$@"
+}
+```
+
+Create the hypertable in a single transaction, then inspect its metadata.
+
+```bash
+run_telemetry_sql --single-transaction -f - < sql/create_telemetry_events.sql
+run_telemetry_sql <<'SQL'
+SELECT current_database() AS db, extversion
+FROM pg_extension
+WHERE extname = 'timescaledb';
+
+SELECT hypertable_name, primary_dimension
+FROM timescaledb_information.hypertables
+WHERE hypertable_schema = 'public' AND hypertable_name = 'telemetry_events';
+SQL
+```
+
+Expect `f1_telemetry | 2.31.0` and `telemetry_events | event_time`.
+Each row represents one source event in one replay. The primary key is
+`(replay_id, event_time, event_id)`, including the time partition column.
+The typed measurements cover car data and position samples. Kafka topic,
+partition, and offset identify the message from which each row was written.
+
+### Write a completed replay
+
+Use the saved OpenF1 snapshot and Kafka topic prepared above. In the same
+terminal, generate a fresh UUID, publish the sample at 10x speed, and
+process that replay with Spark.
+
+```bash
+f1_replay_id=$(uuidgen | tr '[:upper:]' '[:lower:]') &&
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 10 --replay-id "$f1_replay_id" &&
+docker compose --profile streaming --profile processing --profile telemetry run \
+  --rm --no-deps -T --env TIMESCALEDB_PASSWORD \
+  spark /opt/spark/app/write_monza_2024_stream.py \
+  --replay-id "$f1_replay_id"
+```
+
+The default writer processes the available Kafka backlog and exits.
+It reuses `read_monza_replay` from the inspection script. Its checkpoints
+live under `monza_timescale_v1/REPLAY_ID` in `spark_state`.
+Each nonempty micro-batch is committed in one database transaction.
+Logs report the received, inserted, and duplicate counts after that commit.
+
+In the same terminal, check the selected replay.
+
+```bash
+run_telemetry_sql -v replay_id="$f1_replay_id" <<'SQL'
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE event_type = 'car_data') AS car_data,
+       count(*) FILTER (WHERE event_type = 'location') AS location
+FROM public.telemetry_events
+WHERE replay_id = :'replay_id'::uuid;
+SQL
+```
+
+Expect `647 | 322 | 325` for this snapshot.
+
+### Verify duplicate handling
+
+Publish the same source events with the same replay ID, then rerun the
+writer.
+
+```bash
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 10 --replay-id "$f1_replay_id" &&
+docker compose --profile streaming --profile processing --profile telemetry run \
+  --rm --no-deps -T --env TIMESCALEDB_PASSWORD \
+  spark /opt/spark/app/write_monza_2024_stream.py \
+  --replay-id "$f1_replay_id"
+```
+
+Republishing creates new Kafka offsets, so Spark reads the events again.
+The writer uses `ON CONFLICT (replay_id, event_time, event_id) DO NOTHING`.
+For the complete repeated sample, the log totals must be 647 received,
+0 inserted, and 647 duplicates. Repeat the SQL count query above and
+expect `647 | 322 | 325`.
+
+The local test on 2026-11-10 verified both the initial insert and this
+duplicate test. A fresh replay ID stores a separate replay. Restarting
+the writer with an up-to-date checkpoint resumes from saved offsets.
+
+### Write while a replay is being published
+
+Open two terminals in the repository root. In terminal 1, generate a
+fresh UUID and start the writer in follow mode.
+
+```bash
+f1_live_replay_id=$(uuidgen | tr '[:upper:]' '[:lower:]') &&
+docker compose --profile streaming --profile processing --profile telemetry run \
+  --rm --no-deps --env TIMESCALEDB_PASSWORD \
+  spark /opt/spark/app/write_monza_2024_stream.py \
+  --follow --replay-id "$f1_live_replay_id"
+```
+
+Keep terminal 1 running. Follow mode uses a 5-second trigger and stores
+its checkpoints under `monza_timescale_follow_v1/REPLAY_ID`.
+The writer skips logging batches that contain no matching events.
+
+In terminal 2, replace `REPLAY_ID` below with the UUID printed in
+`Writing replay:` in terminal 1. Variables belong to the terminal
+where they were set.
+
+```bash
+f1_live_replay_id=REPLAY_ID
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 1 --replay-id "$f1_live_replay_id"
+```
+
+Watch the `Batch` lines in terminal 1 during publication. Once the producer
+has acknowledged 647 events and Spark has inserted the final batch,
+define `run_telemetry_sql` in terminal 2 using the helper above, then run
+the following query.
+
+```bash
+run_telemetry_sql -v replay_id="$f1_live_replay_id" <<'SQL'
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE event_type = 'car_data') AS car_data,
+       count(*) FILTER (WHERE event_type = 'location') AS location
+FROM public.telemetry_events
+WHERE replay_id = :'replay_id'::uuid;
+SQL
+docker stats --no-stream
+```
+
+Expect `647 | 322 | 325`. Record the memory measurement with its timing,
+such as during publication or while the writer is waiting afterward.
+
+The local test on 2026-11-11 used replay
+`576439ac-8b3c-4682-a391-5f5c5562b4f9` at 1x speed. Kafka acknowledged
+647 messages in partition 0, offsets 2592 through 3238. Spark inserted
+all 647 events in 18 nonempty micro-batches, numbered 3 through 20,
+with zero duplicates. SQL confirmed 322 car samples and 325 positions.
+
+After that replay, with the follow writer waiting, Docker reported
+622.3 MiB for Spark and 58.22 MiB for TimescaleDB. The five containers
+used about 1.77 GiB in total. These values describe that waiting state.
+At startup, one batch took 13.32 seconds against the 5-second trigger
+interval. Processing then continued and completed the replay.
+
+Each row preserves the original `event_time` and the replay's
+`published_at`. The first supports analysis of the historical lap,
+and the second records publication during the demo.
+
+### Stop and restart the environment
+
+After the final batch, press Ctrl+C in terminal 1 and wait for the prompt.
+The `--rm` option removes the one-off Spark container when it exits.
+Check the remaining services.
+
+```bash
+docker compose --profile streaming --profile processing --profile telemetry ps --all
+```
+
+The local test confirmed that PostgreSQL, Grafana, Kafka, and TimescaleDB
+remained running. TimescaleDB reported healthy.
+
+Stop those services before shutting down the Mac with this command.
+
+```bash
+docker compose --profile streaming --profile telemetry stop
+```
+
+On a later day, open Docker Desktop with `open -a Docker`, wait for it
+to be ready, then use the four-service startup command above. Compose
+reuses the named volumes, including the telemetry data and checkpoints.
