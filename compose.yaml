@@ -16,6 +16,9 @@ services:
 
   grafana:
     image: grafana/grafana:13.3.0
+    environment:
+      # Grafana expands this variable in the telemetry data source file.
+      GRAFANA_TELEMETRY_PASSWORD: ${GRAFANA_TELEMETRY_PASSWORD:-}
     # Make the web interface available only on this computer.
     ports:
       - "127.0.0.1:3000:3000"
@@ -25,6 +28,7 @@ services:
       # Mount dashboard definitions and provisioning files read-only.
       - ./dashboards:/etc/grafana/dashboards:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     # Start PostgreSQL first. It may still be initializing when Grafana starts.
     depends_on:
       - postgres

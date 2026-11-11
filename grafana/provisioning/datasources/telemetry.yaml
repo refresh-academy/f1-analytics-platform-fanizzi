@@ -1,0 +1,23 @@
+apiVersion: 1
+
+datasources:
+  - name: f1_telemetry_timescaledb_fanizzi
+    # A stable UID lets dashboard files reference this connection.
+    uid: f1_telemetry_timescaledb
+    type: postgres
+    access: proxy
+    # Use the TimescaleDB service name on the Compose network.
+    url: timescaledb:5432
+    user: grafana_telemetry_reader
+    isDefault: false
+    editable: false
+    jsonData:
+      database: f1_telemetry
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+      # Limit connections for this local telemetry dashboard.
+      maxOpenConns: 5
+    secureJsonData:
+      # Grafana reads the value from its container environment at startup.
+      password: $GRAFANA_TELEMETRY_PASSWORD
