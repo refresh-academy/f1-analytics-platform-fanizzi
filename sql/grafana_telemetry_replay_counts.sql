@@ -9,7 +9,7 @@ WITH selected_replay AS (
     LIMIT 1
 )
 SELECT COUNT(*) AS "Total events",
-       COUNT(*) FILTER (WHERE event_type = 'car_data') AS "Car samples",
-       COUNT(*) FILTER (WHERE event_type = 'location') AS "Position samples"
+       COUNT(*) FILTER (WHERE event_type = 'car_data') AS "Car telemetry events",
+       COUNT(*) FILTER (WHERE event_type = 'location') AS "Position events"
 FROM public.telemetry_events
 WHERE replay_id = (SELECT replay_id FROM selected_replay);

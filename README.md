@@ -15,10 +15,10 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Kafka-to-TimescaleDB streaming writes verified locally.
-> Spark stored all 647 replay events in 18 micro-batches while publication
-> was in progress. The Grafana telemetry dashboard and window-based metrics
-> are the next steps.
+> Current phase: Kafka-to-Grafana telemetry replay verified locally.
+> Spark stores events in TimescaleDB while publication is in progress.
+> Grafana displays event counts, the speed curve, and publication counts.
+> Spark window-based telemetry metrics are the next step.
 
 The repository currently includes:
 
@@ -44,12 +44,13 @@ The repository currently includes:
 - [x] TimescaleDB hypertable for replay telemetry
 - [x] Spark-to-TimescaleDB writes for completed and in-progress replays
 - [x] Duplicate handling verified by republishing the same replay
-- [ ] Grafana telemetry replay dashboard
+- [x] Grafana telemetry replay dashboard with replay selection
+- [x] Live replay visualization and completed replay review
 - [ ] Window-based telemetry metrics
 
 On 2026-11-11, the replay at original pacing stored 647 events in
 `f1_telemetry` across 18 nonempty micro-batches. SQL confirmed 322 car
-samples and 325 position samples. A separate test on 2026-11-10 republished
+telemetry events and 325 position events. A separate test on 2026-11-10 republished
 the same replay ID and inserted zero additional rows. The primary key
 combines replay ID, event time, and event ID to identify repeated samples
 within each replay.
@@ -80,7 +81,8 @@ tyre compounds, and race results in PostgreSQL.
 
 The streaming pipeline publishes historical telemetry samples through Kafka
 at controlled intervals. Spark Structured Streaming writes them to TimescaleDB.
-Window-based calculations and the Grafana telemetry dashboard are the next steps.
+Grafana visualizes the replay from TimescaleDB. Spark window-based
+calculations are the next step.
 
 ## Project Goals
 
@@ -114,6 +116,43 @@ Each stored event preserves two timestamps.
 
 - **Event time (`event_time`)** records when the sample occurred in the historical session.
 - **Publication time (`published_at`)** records when the producer published the sample during replay.
+
+## Telemetry Replay Dashboard
+
+The [local telemetry dashboard](http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay)
+reads TimescaleDB through a dedicated read-only role. It includes:
+
+- Stored event counts for the selected replay.
+- Leclerc's speed in km/h against seconds since the first car telemetry event.
+- Stacked publication counts in five-second buckets, split into car telemetry
+  events and position events.
+
+One car telemetry event is a timestamped measurement record with fields such
+as speed, RPM, throttle, brake, and gear. One position event records spatial
+coordinates. The sample contains 322 car telemetry events and 325 position
+events for one driver.
+
+The speed curve uses historical `event_time`. The publication chart groups
+stored events by `published_at` and follows the dashboard time picker.
+Counters and the speed curve cover the full selected replay. Publication
+buckets describe when stored events were published; they do not measure
+Spark processing time or end-to-end latency. These SQL buckets are separate
+from the planned Spark window-based metrics.
+
+For a running demo, use **Latest replay (auto)**, **Last 5 minutes**, and a
+five-second refresh. Each replay is finite and lasts about 84 seconds at
+original pacing. Grafana refresh, Spark's processing trigger, and the SQL
+bucket width are three independent settings, each currently five seconds.
+
+To review a completed demo, select its Replay ID and an absolute time range
+covering its publication timestamps. Automatic refresh can be turned off.
+An empty time range produces **No data** in the publication chart; the stored
+events remain in TimescaleDB. SQL publication timestamps are shown in UTC in
+the verified setup, while the dashboard uses the browser's time zone.
+
+See [the run order](docs/run_order.md) for setup and replay commands. Dashboard
+queries are versioned under `sql/grafana_telemetry_*.sql`; the builder is
+`grafana/build_telemetry_dashboard.py`.
 
 ## Planned Architecture
 
@@ -170,6 +209,8 @@ The project will be implemented incrementally.
 - Publish historical telemetry events through Kafka (verified locally).
 - Process events with Spark Structured Streaming (verified locally).
 - Store replay telemetry in TimescaleDB (verified locally).
+- Visualize event counts, speed, and publication buckets in Grafana
+  (verified locally).
 - Calculate window-based metrics (planned).
 - Store calculated metrics in TimescaleDB (planned).
 

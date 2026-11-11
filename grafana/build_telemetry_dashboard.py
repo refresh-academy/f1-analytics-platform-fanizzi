@@ -23,14 +23,18 @@ def main() -> None:
     speed_query = (ROOT / "sql/grafana_telemetry_speed.sql").read_text(
         encoding="utf-8"
     )
+    publications_query = (ROOT / "sql/grafana_telemetry_publications.sql").read_text(
+        encoding="utf-8"
+    )
 
     dashboard = {
         "uid": "monza-2024-telemetry-replay",
         "title": "Monza 2024 | Telemetry Replay",
         "tags": ["f1", "monza-2024", "telemetry"],
         "timezone": "browser",
-        # Queries cover one complete replay and refresh while rows arrive.
-        "timepicker": {"hidden": True},
+        # Publication counts use the time picker, alongside full-replay views.
+        "timepicker": {"hidden": False},
+        "time": {"from": "now-5m", "to": "now"},
         "refresh": "5s",
         "schemaVersion": 41,
         "version": 0,
@@ -56,7 +60,7 @@ def main() -> None:
             "title": "Stored events for the selected replay",
             "description": (
                 "Counts refresh every five seconds. The complete Leclerc lap 10 "
-                "sample contains 647 events: 322 car samples and 325 positions."
+                "sample contains 647 events: 322 car telemetry events and 325 position events."
             ),
             "type": "stat",
             "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
@@ -137,6 +141,68 @@ def main() -> None:
             "series": [{}],
             "legend": {"showLegend": False},
             "tooltip": {"mode": "single"},
+        },
+    })
+
+    # Count publications in fixed five-second intervals for the selected replay.
+    dashboard["panels"].append({
+        "id": 3,
+        "title": "Replay publications per 5 seconds",
+        "description": (
+            "Stored events grouped by published_at in five-second buckets. "
+            "Blue shows car telemetry and orange shows positions. "
+            "This panel uses the time picker. Empty ranges show No data. "
+            "Counters and the speed curve cover the full selected replay."
+        ),
+        "type": "timeseries",
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
+        "datasource": datasource,
+        "targets": [{
+            "refId": "A",
+            "datasource": datasource,
+            "editorMode": "code",
+            "rawQuery": True,
+            "rawSql": publications_query,
+            "format": "time_series",
+        }],
+        "fieldConfig": {
+            "defaults": {
+                "unit": "short",
+                "decimals": 0,
+                "min": 0,
+                "custom": {
+                    "drawStyle": "bars",
+                    "barAlignment": 0,
+                    "fillOpacity": 80,
+                    "lineWidth": 0,
+                    "showPoints": "never",
+                    "stacking": {"mode": "normal", "group": "A"},
+                    "axisLabel": "Published events / 5 s",
+                },
+            },
+            "overrides": [
+                {
+                    "matcher": {"id": "byName", "options": "Car telemetry events"},
+                    "properties": [
+                        {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}
+                    ],
+                },
+                {
+                    "matcher": {"id": "byName", "options": "Position events"},
+                    "properties": [
+                        {"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}
+                    ],
+                },
+            ],
+        },
+        "options": {
+            "legend": {
+                "showLegend": True,
+                "displayMode": "table",
+                "placement": "bottom",
+                "calcs": ["sum"],
+            },
+            "tooltip": {"mode": "multi", "sort": "none"},
         },
     })
 

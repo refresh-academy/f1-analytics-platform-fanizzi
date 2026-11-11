@@ -5,8 +5,8 @@ new PostgreSQL database. Run each step in order and stop if a command fails.
 For a database built before the lap accuracy flag was added, use the
 migration section below. An up-to-date database can run step 7 directly.
 
-The later sections cover Kafka replay, Spark inspection, and TimescaleDB
-storage of the OpenF1 telemetry sample.
+The later sections cover Kafka replay, Spark inspection, TimescaleDB
+storage, and Grafana visualization of the OpenF1 telemetry sample.
 
 ## 0. Start the environment
 
@@ -635,7 +635,180 @@ Each row preserves the original `event_time` and the replay's
 `published_at`. The first supports analysis of the historical lap,
 and the second records publication during the demo.
 
-### Stop and restart the environment
+## Visualize telemetry replays in Grafana
+
+Complete the TimescaleDB setup above first. Reuse the existing Grafana
+account. Its sign-in password is separate from both database passwords.
+The existing warehouse dashboard and telemetry dashboard share that account.
+
+### Configure the telemetry data source once
+
+The ignored `.env` must define a nonempty `GRAFANA_TELEMETRY_PASSWORD`.
+This is the database password for `grafana_telemetry_reader`, not the
+Grafana sign-in password or the TimescaleDB administrator password.
+
+For a new setup, define `run_telemetry_sql` as shown above and create the
+reader and its grants:
+
+```bash
+run_telemetry_sql --single-transaction -f - < sql/create_telemetry_grafana_reader.sql
+```
+
+On first setup, assign the same private value saved in
+`GRAFANA_TELEMETRY_PASSWORD` at the password prompt, then enable login.
+Skip these password commands when the reader is already configured.
+
+```bash
+docker compose --profile telemetry exec timescaledb sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -X -w -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "\password grafana_telemetry_reader"'
+run_telemetry_sql -c 'ALTER ROLE grafana_telemetry_reader LOGIN;'
+```
+
+`grafana/provisioning/datasources/telemetry.yaml` provisions the data source
+with UID `f1_telemetry_timescaledb`. It connects to `timescaledb:5432`,
+database `f1_telemetry`, as `grafana_telemetry_reader`. Compose passes
+`GRAFANA_TELEMETRY_PASSWORD` to Grafana for expansion in that file.
+
+Apply the provisioning configuration after saving the password in `.env`:
+
+```bash
+docker compose --profile telemetry config --quiet &&
+docker compose up -d --no-deps --wait --wait-timeout 120 grafana
+```
+
+Once Grafana is ready, verify the data source using the existing Grafana
+account. The second prompt is for that account's sign-in password.
+
+```bash
+printf 'Grafana username: '
+read -r grafana_login &&
+curl -sS --max-time 20 --user "$grafana_login" \
+  --write-out '\nHTTP %{http_code}\n' \
+  http://127.0.0.1:3000/api/datasources/uid/f1_telemetry_timescaledb/health
+```
+
+Expect `Database Connection OK`, status `OK`, and HTTP 200. If Grafana is
+still starting and returns an empty reply, retry the health request once
+startup has completed. The local permission check also confirmed SELECT
+allowed and INSERT, UPDATE, and DELETE denied on `public.telemetry_events`.
+
+### Generate and open the telemetry dashboard
+
+```bash
+uv run --no-project python grafana/build_telemetry_dashboard.py
+open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay'
+```
+
+The builder reads `sql/grafana_telemetry_*.sql` and writes
+`dashboards/monza_2024_telemetry_replay.json`. The generated JSON is ignored
+by Git. The existing file provider checks for changes about every 30 seconds.
+After changing queries or the builder, regenerate the JSON, wait for the
+provider, and reload the dashboard page.
+
+The counters and speed curve cover the full selected replay. The publication
+chart counts stored events by `published_at` within the dashboard time range.
+Blue represents car telemetry events and orange represents position events.
+These events describe measurements for one driver, not different cars.
+
+### Observe a new replay in two terminals
+
+Start PostgreSQL, Grafana, Kafka, and TimescaleDB with the four-service
+command above. Open two terminals in the repository root. If a previous
+follow writer is still running in terminal 1, stop it with Ctrl+C first.
+
+In terminal 1, generate a fresh Replay ID and start the writer:
+
+```bash
+f1_live_replay_id=$(uuidgen | tr '[:upper:]' '[:lower:]') &&
+docker compose --profile streaming --profile processing --profile telemetry run \
+  --rm --no-deps --env TIMESCALEDB_PASSWORD \
+  spark /opt/spark/app/write_monza_2024_stream.py \
+  --follow --replay-id "$f1_live_replay_id"
+```
+
+Keep terminal 1 running. In terminal 2, open the dashboard for a new demo:
+
+```bash
+open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay?from=now-5m&to=now&var-telemetry_replay=latest'
+```
+
+Confirm **Latest replay (auto)**, **Last 5 minutes**, and a **5s** refresh
+before publishing. The latest selection switches once the new replay has
+stored events. The publication chart can initially show **No data**.
+
+In terminal 2, run the following block. At the prompt, paste only the UUID
+from `Writing replay:` in terminal 1, then press Enter:
+
+```bash
+printf 'Paste the new replay ID: '
+read -r f1_demo_replay_id &&
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 1 --replay-id "$f1_demo_replay_id"
+```
+
+At 1x speed the sample takes about 84 seconds to publish. Watch the counters,
+speed curve, and publication bars update as Spark stores incoming events.
+The producer finishes after 647 acknowledgements; the follow writer keeps
+waiting for more messages. Use a fresh UUID for another visual demo.
+
+The three five-second settings have different purposes:
+
+| Setting | Purpose |
+|---|---|
+| Spark processing trigger | Schedules micro-batch processing, subject to batch duration. |
+| Grafana refresh | Queries the data source again for display. |
+| Publication bucket width | Groups stored events by five-second publication intervals in SQL. |
+
+The chart uses producer publication timestamps. It does not measure Spark
+ingestion time, processing throughput, or end-to-end latency. Spark
+window-based telemetry metrics remain a separate planned step.
+
+### Verify and review the completed replay
+
+After the producer finishes and Spark commits the final batch, define
+`run_telemetry_sql` in terminal 2 as shown above and run:
+
+```bash
+run_telemetry_sql -v replay_id="$f1_demo_replay_id" <<'SQL'
+SELECT COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE event_type = 'car_data') AS car_telemetry_events,
+       COUNT(*) FILTER (WHERE event_type = 'location') AS position_events,
+       MIN(published_at) AS first_published_at,
+       MAX(published_at) AS last_published_at
+FROM public.telemetry_events
+WHERE replay_id = :'replay_id'::uuid;
+SQL
+```
+
+Expect `647 | 322 | 325`. Select that Replay ID in Grafana and set an
+absolute time range that includes both publication timestamps. SQL showed
+UTC timestamps in the verified setup; Grafana uses the browser's time zone.
+Automatic refresh can be set to **Off** when reviewing a completed replay.
+Turning refresh off stops automatic queries; choosing the absolute time
+range keeps the displayed interval fixed.
+
+With **Last 5 minutes**, old publication bars eventually leave the visible
+range. **No data** means no matching stored rows in the selected time range.
+Changing the time range or refresh setting does not delete database rows.
+
+The local demo on 2026-11-11 used Replay ID
+`c7542b15-cd9f-437d-ac79-0d9915b9ecfa`. Kafka acknowledged all 647 events in
+partition 0, offsets 4533 through 5179. SQL confirmed 322 car telemetry
+events and 325 position events, published between
+`2026-11-11 16:59:12.541116+00` and `2026-11-11 17:00:36.676648+00`.
+That is 17:59:12 through 18:00:36 in Europe/Rome on that date.
+
+This command opens an absolute range containing that verified replay:
+
+```bash
+open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay?from=1794416350000&to=1794416445000&var-telemetry_replay=c7542b15-cd9f-437d-ac79-0d9915b9ecfa'
+```
+
+The publication bars reappeared with totals of 322 and 325 after selecting
+this range. This URL refers to that completed local demo. For a new demo,
+use the relative-range URL above and a fresh Replay ID.
+
+## Stop and restart the environment
 
 After the final batch, press Ctrl+C in terminal 1 and wait for the prompt.
 The `--rm` option removes the one-off Spark container when it exits.
