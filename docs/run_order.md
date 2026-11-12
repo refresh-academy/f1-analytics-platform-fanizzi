@@ -6,7 +6,8 @@ For a database built before the lap accuracy flag was added, use the
 migration section below. An up-to-date database can run step 7 directly.
 
 The later sections cover Kafka replay, Spark inspection, TimescaleDB
-storage, and Grafana visualization of the OpenF1 telemetry sample.
+storage, Grafana visualization, and event-time speed metrics for the
+OpenF1 telemetry sample.
 
 ## 0. Start the environment
 
@@ -808,9 +809,145 @@ The publication bars reappeared with totals of 322 and 325 after selecting
 this range. This URL refers to that completed local demo. For a new demo,
 use the relative-range URL above and a fresh Replay ID.
 
+## Calculate five-second speed-window metrics
+
+This section covers the completed-replay validation. Start the four services
+and build the Spark image as described above. The selected replay must still
+be available in Kafka and already stored in `public.telemetry_events`, which
+provides the independent SQL reference. Define `run_telemetry_sql` in this
+terminal using the helper in the TimescaleDB section above.
+
+### Create the metrics hypertable
+
+```bash
+run_telemetry_sql --single-transaction -f - < sql/create_telemetry_speed_5s.sql
+```
+
+`public.telemetry_speed_5s` stores one row per replay, session, driver, and
+five-second window start. It contains the sample count and speed mean,
+minimum, and maximum. Its time partition column is `window_start`, and the
+primary key includes that column. Window starts are inclusive and ends are
+exclusive. Only car telemetry events with non-null speed contribute.
+
+The statistics use historical event time. Publication time and `updated_at`
+have different meanings: the first records producer publication during the
+replay, while the second records the metrics write transaction time.
+
+### Define the job and validation helpers
+
+Run these definitions in the same terminal used for the following checks:
+
+```bash
+run_speed_metrics() {
+    docker compose --profile streaming --profile processing --profile telemetry run \
+      --rm --no-deps -T --env TIMESCALEDB_PASSWORD \
+      spark /opt/spark/app/aggregate_monza_2024_stream.py \
+      --replay-id "$f1_metrics_replay_id"
+}
+
+check_speed_metrics() {
+    run_telemetry_sql --single-transaction \
+      -v replay_id="$f1_metrics_replay_id" -f - \
+      < tests/sql/check_monza_speed_windows.sql
+}
+```
+
+The metrics job reuses `read_monza_replay` and drains the available Kafka
+records before exiting. Its offsets and aggregation state are stored under
+`monza_speed_5s_v1/REPLAY_ID` in `spark_state`, separately from raw-event
+storage and inspection. Application code is available through the existing
+`src/streaming` bind mount.
+
+Select a completed replay at the prompt, then run the calculation and check:
+
+```bash
+printf 'Paste a completed replay ID: '
+read -r f1_metrics_replay_id &&
+run_speed_metrics &&
+check_speed_metrics
+```
+
+For the current sample, expect 18 expected and stored windows, 322 expected
+and stored speed samples, zero mismatched windows, and
+`Speed-window validation passed.`
+
+The SQL test independently groups raw events with epoch-aligned `date_bin`.
+It checks missing and unexpected windows, interval ends, sample counts,
+minima, maxima, and sample means with a tolerance of `1e-9` km/h. It fails
+for an empty raw reference or a disagreement. Its comparison table exists
+only for the test transaction.
+
+### Understand updates and the watermark
+
+Spark retains distinct `(event_id, speed)` pairs in each active window.
+Two different events with the same speed remain separate samples. An event
+ID with conflicting speed values in the same window fails the calculation.
+The mean is an arithmetic sample mean, not a time-weighted or whole-lap mean.
+
+Update mode emits current aggregate values, including the last windows of
+a finite replay. A row can be updated as more samples arrive. A stored row
+does not by itself mean that the watermark has finalized that window.
+
+The ten-second watermark follows the maximum historical event time observed
+by the metrics query, not the current wall clock. Older observations can be
+excluded. State size grows with unique samples in each active window, so
+this design is intended for the current small replay.
+
+The database writer replaces cumulative values in one transaction per batch.
+It skips identical outputs and prevents a partial rebuild with fewer samples
+from overwriting a more complete stored window. Log fields
+`windows_received` and `windows_changed` describe that batch's emitted
+windows and changed database rows. A window can appear in more than one
+batch; sum `sample_count` in the table to count the stored speed samples.
+
+### Verify restart and republication behavior
+
+Run the same job again with the same Replay ID and checkpoint:
+
+```bash
+run_speed_metrics && check_speed_metrics
+```
+
+When there are no new matching events, there may be no `Metrics batch`
+lines. The SQL result must remain 18 windows, 322 samples, and zero
+mismatches for this snapshot.
+
+Next, republish the same source events using the same Replay ID, then run
+the job and SQL check again:
+
+```bash
+uv run python -m src.streaming.replay_monza_2024 \
+  --speed 10 --replay-id "$f1_metrics_replay_id" &&
+run_speed_metrics &&
+check_speed_metrics
+```
+
+Kafka assigns new offsets to these messages. Older events can be excluded
+by the watermark, and duplicates within active windows retain their existing
+sample identity. The stored metrics must still match the raw reference.
+
+### Observed local results
+
+On 2026-11-12, replay `c7542b15-cd9f-437d-ac79-0d9915b9ecfa` produced
+18 stored windows covering 322 speed samples. The first run emitted
+13 windows in batch 4 and 6 in batch 5; one window appeared in both batches.
+The independent SQL comparison passed for all 18 windows.
+
+Restarting from the checkpoint preserved those results. After republishing
+the same Replay ID, batch 7 emitted three windows and changed zero database
+rows. The SQL check again reported 18 windows, 322 samples, and zero
+mismatches. Startup messages about disabling AQE for stateful workloads and
+loading state snapshots appeared in these successful runs.
+
+The CLI also provides `--follow`, with checkpoint prefix
+`monza_speed_5s_follow_v1` and a five-second processing trigger. Validation
+while a new replay is being published and Grafana display of the speed-window
+metrics are the next steps.
+
 ## Stop and restart the environment
 
-After the final batch, press Ctrl+C in terminal 1 and wait for the prompt.
+After the final batch, stop any active follow job with Ctrl+C in its
+terminal and wait for the prompt. Completed-replay jobs exit automatically.
 The `--rm` option removes the one-off Spark container when it exits.
 Check the remaining services.
 

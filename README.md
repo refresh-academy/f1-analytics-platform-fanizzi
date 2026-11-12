@@ -15,10 +15,10 @@ for other systems.
 
 ## Project Status
 
-> Current phase: Kafka-to-Grafana telemetry replay verified locally.
-> Spark stores events in TimescaleDB while publication is in progress.
-> Grafana displays event counts, the speed curve, and publication counts.
-> Spark window-based telemetry metrics are the next step.
+> Current phase: speed-window metrics verified for completed replays.
+> Spark stored 18 windows covering 322 speed samples. SQL reconciliation,
+> checkpoint restart, and same-ID republication passed locally.
+> Next: validate these metrics during publication and display them in Grafana.
 
 The repository currently includes:
 
@@ -46,7 +46,10 @@ The repository currently includes:
 - [x] Duplicate handling verified by republishing the same replay
 - [x] Grafana telemetry replay dashboard with replay selection
 - [x] Live replay visualization and completed replay review
-- [ ] Window-based telemetry metrics
+- [x] Spark five-second speed-window metrics for completed replays
+- [x] SQL reconciliation, checkpoint restart, and republication checks for metrics
+- [ ] Speed-window metrics verified during an in-progress replay
+- [ ] Grafana display of speed-window metrics
 
 On 2026-11-11, the replay at original pacing stored 647 events in
 `f1_telemetry` across 18 nonempty micro-batches. SQL confirmed 322 car
@@ -81,8 +84,9 @@ tyre compounds, and race results in PostgreSQL.
 
 The streaming pipeline publishes historical telemetry samples through Kafka
 at controlled intervals. Spark Structured Streaming writes them to TimescaleDB.
-Grafana visualizes the replay from TimescaleDB. Spark window-based
-calculations are the next step.
+Grafana visualizes the replay from TimescaleDB. A separate Spark job
+calculates five-second speed metrics for completed replays. Validation
+during publication and Grafana display of these metrics are the next steps.
 
 ## Project Goals
 
@@ -137,7 +141,7 @@ stored events by `published_at` and follows the dashboard time picker.
 Counters and the speed curve cover the full selected replay. Publication
 buckets describe when stored events were published; they do not measure
 Spark processing time or end-to-end latency. These SQL buckets are separate
-from the planned Spark window-based metrics.
+from Spark's event-time speed-window metrics.
 
 For a running demo, use **Latest replay (auto)**, **Last 5 minutes**, and a
 five-second refresh. Each replay is finite and lasts about 84 seconds at
@@ -153,6 +157,38 @@ the verified setup, while the dashboard uses the browser's time zone.
 See [the run order](docs/run_order.md) for setup and replay commands. Dashboard
 queries are versioned under `sql/grafana_telemetry_*.sql`; the builder is
 `grafana/build_telemetry_dashboard.py`.
+
+## Five-Second Speed Metrics
+
+`src/streaming/aggregate_monza_2024_stream.py` reads one replay from Kafka
+and groups car telemetry by five-second historical event-time windows,
+replay ID, session, and driver. It stores the sample count and speed mean,
+minimum, and maximum in `public.telemetry_speed_5s` in TimescaleDB.
+The mean is an arithmetic sample mean, not a time-weighted or whole-lap mean.
+Position events and missing speed values do not contribute.
+
+Spark retains unique `(event_id, speed)` pairs within each active window
+to avoid counting repeated source samples. Update mode writes the latest
+known aggregate values, including the final windows of a finite replay.
+Stored rows can be updated as more samples arrive; their presence does
+not imply that the watermark has finalized every window.
+
+The ten-second watermark follows the maximum historical event time seen
+by the query. Older observations can be excluded from the metrics.
+Window state grows with the unique samples in each active window; this
+approach is intended for the current small replay. The metrics query has
+its own checkpoints, separate from the raw-event writer and inspection.
+
+On 2026-11-12, the completed-replay test stored **18 event-time windows**
+covering **322 speed samples**. The independent SQL check in
+`tests/sql/check_monza_speed_windows.sql` found no differences in window
+coverage, interval width, sample counts, means, minima, or maxima.
+Restarting from the same checkpoint and republishing the same Replay ID
+both preserved these results. The republication run emitted three windows
+and changed zero stored rows.
+
+Validation while a new replay is being published and Grafana display of
+these speed-window metrics are the next steps.
 
 ## Planned Architecture
 
@@ -211,8 +247,11 @@ The project will be implemented incrementally.
 - Store replay telemetry in TimescaleDB (verified locally).
 - Visualize event counts, speed, and publication buckets in Grafana
   (verified locally).
-- Calculate window-based metrics (planned).
-- Store calculated metrics in TimescaleDB (planned).
+- Calculate five-second speed-window metrics in Spark (verified locally
+  for completed replays).
+- Store calculated metrics in TimescaleDB (verified locally).
+- Validate speed-window metrics during publication and display them
+  in Grafana (planned).
 
 ### Phase 6: Reliability and Documentation
 
