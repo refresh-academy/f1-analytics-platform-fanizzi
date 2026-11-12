@@ -18,7 +18,7 @@ for other systems.
 > Current phase: speed-window metrics verified for completed replays.
 > Spark stored 18 windows covering 322 speed samples. SQL reconciliation,
 > checkpoint restart, and same-ID republication passed locally.
-> Next: validate these metrics during publication and display them in Grafana.
+> Next: validate speed-window metrics during a new replay.
 
 The repository currently includes:
 
@@ -49,7 +49,7 @@ The repository currently includes:
 - [x] Spark five-second speed-window metrics for completed replays
 - [x] SQL reconciliation, checkpoint restart, and republication checks for metrics
 - [ ] Speed-window metrics verified during an in-progress replay
-- [ ] Grafana display of speed-window metrics
+- [x] Grafana display of five-second speed mean, minimum, and maximum
 
 On 2026-11-11, the replay at original pacing stored 647 events in
 `f1_telemetry` across 18 nonempty micro-batches. SQL confirmed 322 car
@@ -85,8 +85,8 @@ tyre compounds, and race results in PostgreSQL.
 The streaming pipeline publishes historical telemetry samples through Kafka
 at controlled intervals. Spark Structured Streaming writes them to TimescaleDB.
 Grafana visualizes the replay from TimescaleDB. A separate Spark job
-calculates five-second speed metrics for completed replays. Validation
-during publication and Grafana display of these metrics are the next steps.
+calculates five-second speed metrics for completed replays. Grafana displays
+their means, minima, and maxima. Validation during publication is next.
 
 ## Project Goals
 
@@ -187,8 +187,9 @@ Restarting from the same checkpoint and republishing the same Replay ID
 both preserved these results. The republication run emitted three windows
 and changed zero stored rows.
 
-Validation while a new replay is being published and Grafana display of
-these speed-window metrics are the next steps.
+Grafana displays these metrics in **Speed | 5-second mean, min and max**.
+Hover over the information icon beside the title for the panel description,
+or over a point for its values. Validation during a new replay is next.
 
 ## Planned Architecture
 
@@ -250,8 +251,8 @@ The project will be implemented incrementally.
 - Calculate five-second speed-window metrics in Spark (verified locally
   for completed replays).
 - Store calculated metrics in TimescaleDB (verified locally).
-- Validate speed-window metrics during publication and display them
-  in Grafana (planned).
+- Display speed-window means, minima, and maxima in Grafana (verified locally).
+- Validate speed-window metrics during publication (planned).
 
 ### Phase 6: Reliability and Documentation
 

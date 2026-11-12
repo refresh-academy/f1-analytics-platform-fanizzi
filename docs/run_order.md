@@ -696,7 +696,9 @@ allowed and INSERT, UPDATE, and DELETE denied on `public.telemetry_events`.
 ### Generate and open the telemetry dashboard
 
 ```bash
-uv run --no-project python grafana/build_telemetry_dashboard.py
+run_telemetry_sql --single-transaction -f - < sql/create_telemetry_speed_5s.sql &&
+run_telemetry_sql --single-transaction -f - < sql/grant_telemetry_speed_grafana_reader.sql &&
+uv run --no-project python grafana/build_telemetry_dashboard.py &&
 open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay'
 ```
 
@@ -808,6 +810,29 @@ open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-r
 The publication bars reappeared with totals of 322 and 325 after selecting
 this range. This URL refers to that completed local demo. For a new demo,
 use the relative-range URL above and a fresh Replay ID.
+
+### Read the five-second speed panel
+
+After running the metrics job, select its Replay ID in the dashboard.
+The panel **Speed | 5-second mean, min and max** reads those Spark results.
+
+Hover over the information icon (`i`) beside the panel title to read its
+description. Hover over a plotted point to inspect the numeric speed values
+for that window.
+
+- **Mean (blue, thicker line):** arithmetic mean of the window's speed samples.
+- **Minimum (green):** lowest sampled speed in that window.
+- **Maximum (orange):** highest sampled speed in that window.
+
+Each point summarizes a five-second historical event-time window. It is
+positioned at the window end, measured in seconds since the first car sample.
+The connecting lines link window summaries. The first and last windows may
+contain samples from only part of their interval.
+
+Displayed speeds are rounded to one decimal place; stored aggregates retain
+their precision. This panel covers the full selected replay independently
+of the dashboard time picker. The verified local replay contains 18 windows.
+Use the metrics job in the next section to populate a selected replay.
 
 ## Calculate five-second speed-window metrics
 

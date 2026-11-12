@@ -27,6 +27,10 @@ def main() -> None:
         encoding="utf-8"
     )
 
+    speed_windows_query = (ROOT / "sql/grafana_telemetry_speed_windows.sql").read_text(
+        encoding="utf-8"
+    )
+
     dashboard = {
         "uid": "monza-2024-telemetry-replay",
         "title": "Monza 2024 | Telemetry Replay",
@@ -202,6 +206,79 @@ def main() -> None:
                 "placement": "bottom",
                 "calcs": ["sum"],
             },
+            "tooltip": {"mode": "multi", "sort": "none"},
+        },
+    })
+
+    # Compare Spark's five-second speed aggregates on the historical lap timeline.
+    dashboard["panels"].append({
+        "id": 4,
+        "title": "Speed | 5-second mean, min and max",
+        "description": (
+            "Spark's latest mean, minimum and maximum speed for each five-second "
+            "historical event-time window. Points are plotted at window end, "
+            "relative to the first car sample. The first and last windows may "
+            "cover only part of the sample. This panel covers the full selected "
+            "replay, independently of the dashboard time picker."
+        ),
+        "type": "xychart",
+        "gridPos": {"h": 12, "w": 24, "x": 0, "y": 28},
+        "datasource": datasource,
+        "targets": [{
+            "refId": "A",
+            "datasource": datasource,
+            "editorMode": "code",
+            "rawQuery": True,
+            "rawSql": speed_windows_query,
+            "format": "table",
+        }],
+        "fieldConfig": {
+            "defaults": {
+                "unit": "velocitykmh",
+                "decimals": 1,
+                "min": 0,
+                "custom": {
+                    "show": "points+lines",
+                    "pointSize": {"fixed": 4},
+                    "lineWidth": 1,
+                    "axisLabel": "Speed (km/h)",
+                },
+            },
+            "overrides": [
+                {
+                    "matcher": {"id": "byName", "options": "elapsed_seconds"},
+                    "properties": [
+                        {"id": "unit", "value": "none"},
+                        {"id": "decimals", "value": 1},
+                        {"id": "custom.axisLabel", "value": "Time since first car sample (s)"},
+                    ],
+                },
+                {
+                    "matcher": {"id": "byName", "options": "Mean speed"},
+                    "properties": [
+                        {"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}},
+                        {"id": "custom.lineWidth", "value": 3},
+                        {"id": "custom.pointSize", "value": {"fixed": 6}},
+                    ],
+                },
+                {
+                    "matcher": {"id": "byName", "options": "Minimum speed"},
+                    "properties": [
+                        {"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}},
+                    ],
+                },
+                {
+                    "matcher": {"id": "byName", "options": "Maximum speed"},
+                    "properties": [
+                        {"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}},
+                    ],
+                },
+            ],
+        },
+        "options": {
+            "mapping": "auto",
+            "series": [{}],
+            "legend": {"showLegend": True, "displayMode": "list", "placement": "bottom"},
             "tooltip": {"mode": "multi", "sort": "none"},
         },
     })
