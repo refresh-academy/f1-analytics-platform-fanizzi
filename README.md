@@ -6,6 +6,36 @@ data warehouse with a near-real-time telemetry replay pipeline.
 The project is developed as a learning and portfolio initiative within
 Refresh Academy.
 
+## Getting Started
+
+### Get the source code
+
+Clone the repository and enter its directory:
+
+```bash
+git clone https://github.com/refresh-academy/f1-analytics-platform-fanizzi.git
+cd f1-analytics-platform-fanizzi
+```
+
+While the repository is private, cloning requires repository access.
+Run the remaining project commands from this directory.
+
+### Prepare the local environment and inputs
+
+- Install Git, uv, Docker with Docker Compose, and the Python version
+  declared in [.python-version](.python-version).
+- Follow step 0 of the [local run order](docs/run_order.md) to prepare
+  the local `.env` using [.env.example](.env.example).
+  Preserve an existing configuration.
+- Obtain the required raw source files before running transformations or
+  replay jobs. Cloning does not include local Parquet datasets, database
+  contents, or Spark checkpoints. See [Data Sources](#data-sources)
+  for acquisition details and the current FastF1 access limitation.
+- Follow the batch build or coordinated streaming replay procedure in
+  the [local run order](docs/run_order.md).
+
+The verified local environment and completed checks are described below.
+
 ## Verified Local Environment
 
 The project has been developed and run on an Intel Mac (`amd64`) with
