@@ -708,12 +708,16 @@ by Git. The existing file provider checks for changes about every 30 seconds.
 After changing queries or the builder, regenerate the JSON, wait for the
 provider, and reload the dashboard page.
 
-The counters and speed curve cover the full selected replay. The publication
-chart counts stored events by `published_at` within the dashboard time range.
+The counters, raw speed curve, and speed-window panel cover the full
+selected replay. The publication chart counts stored events by
+`published_at` within the dashboard time range.
 Blue represents car telemetry events and orange represents position events.
 These events describe measurements for one driver, not different cars.
 
-### Observe a new replay in two terminals
+### Observe a raw-event replay in two terminals
+
+This procedure starts only the event writer. For event storage and speed
+metrics together, use the coordinated streaming replay section below.
 
 Start PostgreSQL, Grafana, Kafka, and TimescaleDB with the four-service
 command above. Open two terminals in the repository root. If a previous
@@ -763,8 +767,9 @@ The three five-second settings have different purposes:
 | Publication bucket width | Groups stored events by five-second publication intervals in SQL. |
 
 The chart uses producer publication timestamps. It does not measure Spark
-ingestion time, processing throughput, or end-to-end latency. Spark
-window-based telemetry metrics remain a separate planned step.
+ingestion time, processing throughput, or end-to-end latency. Spark's
+event-time speed windows are calculated by a separate query, which can
+run alongside event storage in the coordinated procedure below.
 
 ### Verify and review the completed replay
 
@@ -965,15 +970,344 @@ mismatches. Startup messages about disabling AQE for stateful workloads and
 loading state snapshots appeared in these successful runs.
 
 The CLI also provides `--follow`, with checkpoint prefix
-`monza_speed_5s_follow_v1` and a five-second processing trigger. Validation
-while a new replay is being published and Grafana display of the speed-window
-metrics are the next steps.
+`monza_speed_5s_follow_v1` and a five-second processing trigger. Coordinated
+event storage, speed aggregation, and Grafana speed-window updates during
+publication were verified locally on 2026-11-16, as described below.
+
+## Run the coordinated streaming replay
+
+This procedure runs raw-event storage and five-second speed aggregation
+in one Spark session. It was verified locally during publication on
+2026-11-16 using the existing Monza 2024 sample.
+
+### Prerequisites and terminal roles
+
+Complete the Kafka topic, TimescaleDB tables, Grafana reader grants, data
+source, and dashboard setup in the earlier sections. Keep the saved OpenF1
+sample available locally. Define `run_telemetry_sql` in terminal 2 using
+the helper from the TimescaleDB section.
+
+Run all commands from the repository root in VS Code's integrated terminal.
+
+| Terminal | Purpose |
+|---|---|
+| 1 | Run the coordinated Spark job and retain its output. |
+| 2 | Start services, check offsets, publish the replay, and run SQL checks. |
+
+The verified Docker budget is approximately 3.823 GiB. Spark uses
+`local[1]`, a 512 MiB Java driver heap, and a 1.5 GiB container limit.
+Use one Spark container for this demo. Stop an earlier follow job before
+starting another one.
+
+The two queries share the session but keep independent checkpoints and
+database transactions. Their panels can update at different times.
+The coordinator monitors both queries. A streaming exception, or an
+unexpected normal query termination in follow mode, fails the job and
+closes the shared session.
+
+### Start services and the coordinated job
+
+In terminal 2, start the four services:
+
+```bash
+docker compose --profile streaming --profile telemetry up -d --wait \
+  postgres grafana kafka timescaledb
+```
+
+In terminal 1, generate a fresh Replay ID and start Spark:
+
+```bash
+f1_live_replay_id=$(uuidgen | tr '[:upper:]' '[:lower:]') &&
+uv run --env-file .env --no-project docker compose \
+  --profile streaming --profile processing --profile telemetry run \
+  --no-deps \
+  --name "f1-monza-${f1_live_replay_id}" \
+  --env TIMESCALEDB_PASSWORD \
+  spark /opt/spark/app/write_monza_2024_stream.py \
+  --follow \
+  --with-speed-metrics \
+  --replay-id "$f1_live_replay_id"
+```
+
+`uv` loads the local `.env` for this command. The password is passed through
+the environment rather than included in the command arguments.
+Application code is bind-mounted; Python-only edits do not require an image
+rebuild. Rebuild after changes to the Spark Dockerfile or its dependencies.
+
+The container name includes the UUID so older diagnostic containers can be
+retained without a naming conflict. The command omits `--rm` to preserve
+logs and exit status after termination.
+
+Wait for the following messages:
+
+```text
+Writing replay: <UUID>
+Checkpoint: .../monza_timescale_follow_v1/<UUID>
+Aggregating replay: <same UUID>
+Checkpoint: .../monza_speed_5s_follow_v1/<same UUID>
+Started queries: events, speed_metrics
+```
+
+These messages confirm query startup, not completion of backlog recovery.
+Keep terminal 1 running.
+
+### Check both checkpoints before publication
+
+In terminal 2, paste only the UUID printed by Spark:
+
+```bash
+printf 'Paste the new replay ID: '
+read -r f1_demo_replay_id &&
+f1_demo_container="f1-monza-${f1_demo_replay_id}"
+```
+
+Variables set in terminal 1 are not automatically available in terminal 2.
+Check memory and Kafka's end offsets:
+
+```bash
+docker stats --no-stream \
+  --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' &&
+docker compose --profile streaming exec -T kafka \
+  /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server kafka:19092 \
+  --topic f1.telemetry.raw.v1 \
+  --time -1
+```
+
+Read the source offsets of each query's latest completed batch:
+
+```bash
+docker exec -i "$f1_demo_container" python3 - "$f1_demo_replay_id" <<'PY'
+import json
+import sys
+from pathlib import Path
+from uuid import UUID
+
+replay_id = str(UUID(sys.argv[1]))
+root = Path("/opt/spark/work-dir/checkpoints")
+
+for label, prefix in [
+    ("events", "monza_timescale_follow_v1"),
+    ("speed_metrics", "monza_speed_5s_follow_v1"),
+]:
+    checkpoint = root / prefix / replay_id
+    commits = checkpoint / "commits"
+    batch_ids = [
+        int(path.name)
+        for path in commits.iterdir()
+        if path.is_file() and path.name.isdigit()
+    ] if commits.is_dir() else []
+
+    if not batch_ids:
+        print(f"{label}: no completed micro-batch yet.")
+        continue
+
+    batch_id = max(batch_ids)
+    lines = (checkpoint / "offsets" / str(batch_id)).read_text().splitlines()
+    if len(lines) < 3 or lines[0] != "v1":
+        raise SystemExit(f"Unexpected checkpoint format for {label}.")
+
+    print(f"{label}: last_committed_batch={batch_id}")
+    for source in lines[2:]:
+        if source.strip():
+            offsets = None if source == "-" else json.loads(source)
+            print("Committed source offsets:", json.dumps(offsets, sort_keys=True))
+PY
+```
+
+Before publishing, both queries must match Kafka's end offsets for every
+partition. Batch numbers can differ. If a query has not caught up, leave it
+running and repeat the checks. With no producer publishing, the end offsets
+should remain stable. Kafka's end offset is the next message position,
+rather than the offset of the last existing message.
+
+New queries read Kafka from `earliest`, filtering for their Replay ID.
+They must therefore scan older replays too. Empty matching batches do not
+produce the usual event-write or metrics-write log lines.
+
+### Prepare Grafana and publish at original pacing
+
+In terminal 2, open the live dashboard:
+
+```bash
+open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay?from=now-5m&to=now&var-telemetry_replay=latest&refresh=5s'
+```
+
+Confirm **Latest replay (auto)**, **Last 5 minutes**, and refresh **5s**.
+Make the fourth panel, **Speed | 5-second mean, min and max**, visible
+before publishing. The dashboard can still display the previous replay
+until the first events of the new one are stored.
+
+Start the producer in terminal 2:
+
+```bash
+if [ "$(docker inspect --format '{{.State.Running}}' "$f1_demo_container")" = "true" ]; then
+  uv run python -m src.streaming.replay_monza_2024 \
+    --speed 1 \
+    --replay-id "$f1_demo_replay_id"
+else
+  printf '%s\n' 'Stopped: the Spark container is not running.'
+fi
+```
+
+The sample takes about 84 seconds at original pacing. Watch the event
+counts, raw speed curve, publication bars, and speed-window curves.
+The fourth panel should populate as speed samples are processed. A brief
+empty panel is possible while the new replay's first aggregates are pending.
+
+The producer should acknowledge all 647 events and print its first and
+last broker positions. Record those positions for this execution.
+Leave Spark running after the producer exits so both queries can finish
+their remaining batches.
+
+The five-second processing trigger, dashboard refresh, publication bucket
+width, and event-time window width are independent settings. They do not
+establish a five-second end-to-end latency guarantee.
+
+### Reconcile stored events and speed windows
+
+After the final batches, run in terminal 2:
+
+```bash
+run_telemetry_sql -v replay_id="$f1_demo_replay_id" <<'SQL'
+SELECT COUNT(*) AS total_events,
+       COUNT(*) FILTER (WHERE event_type = 'car_data') AS car_data_events,
+       COUNT(*) FILTER (WHERE event_type = 'location') AS location_events,
+       MIN(published_at) AS first_published_at,
+       MAX(published_at) AS last_published_at
+FROM public.telemetry_events
+WHERE replay_id = :'replay_id'::uuid;
+SQL
+
+run_telemetry_sql --single-transaction \
+  -v replay_id="$f1_demo_replay_id" -f - \
+  < tests/sql/check_monza_speed_windows.sql
+```
+
+Expect 647 events, including 322 car telemetry events and 325 positions.
+The speed-window test must report 18 expected and stored windows,
+322 expected and stored samples, zero mismatched windows, and
+`Speed-window validation passed.`
+
+If processing is still in progress, wait for the remaining batches before
+repeating the checks. Investigate a persistent disagreement.
+
+The comparison independently calculates windows from stored raw events.
+It checks coverage, interval ends, counts, means, minima, and maxima.
+Update-mode rows remain latest-known aggregates; their presence does not
+mean every window has been finalized by the watermark.
+
+Record the container state and memory after verification:
+
+```bash
+docker inspect \
+  --format 'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}}' \
+  "$f1_demo_container" &&
+docker stats --no-stream \
+  --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'
+```
+
+For a running container, `exit_code=0` is not a completed-job result.
+Record when each memory snapshot was taken.
+
+### Review a completed streaming replay
+
+Select its explicit Replay ID, choose an absolute range containing both
+publication timestamps, and set refresh to **Off**.
+
+With a relative range such as **Last 5 minutes**, the publication chart's
+time boundaries advance during refresh. Refresh **Off** stops periodic
+dashboard queries; it does not stop Spark, the producer, or database writes.
+An absolute range fixes the publication chart's time boundaries.
+Counters and both speed panels cover the selected replay independently
+of that time picker.
+
+### Observed coordinated replay on 2026-11-16
+
+The visually observed test used container `f1-monza-live-observe`.
+The procedure above derives container names from Replay IDs for future runs.
+
+| Check | Observed result |
+|---|---|
+| Replay ID | `88b5ab88-949e-46e8-9eba-50ff302b4efc` |
+| Producer pacing | 1x, original historical intervals |
+| Kafka acknowledgements | 647 |
+| Kafka partition and offsets | Partition 0, offsets 6474 through 7120 |
+| Stored events | 647: 322 car telemetry and 325 position events |
+| Expected / stored windows | 18 / 18 |
+| Expected / stored speed samples | 322 / 322 |
+| Mismatched windows | 0 |
+| Grafana observation | Speed-window curves updated during publication |
+
+Publication timestamps were `2026-11-16 11:58:23.800389+00` through
+`2026-11-16 11:59:47.935592+00`, corresponding to
+12:58:23.800389 through 12:59:47.935592 in Europe/Rome.
+
+This URL opens that replay with a small margin around its publication:
+
+```bash
+open 'http://localhost:3000/d/monza-2024-telemetry-replay/monza-2024-telemetry-replay?from=1794830295000&to=1794830395000&var-telemetry_replay=88b5ab88-949e-46e8-9eba-50ff302b4efc'
+```
+
+Set refresh to **Off** for review. The fixed range is 11:58:15 through
+11:59:55 UTC, or 12:58:15 through 12:59:55 in Europe/Rome.
+
+After reconciliation, the container was still running with
+`oom_killed=false`. Spark used 647.6 MiB of its 1.5 GiB limit.
+The five running containers used approximately 1.89 GiB in total.
+These are post-replay snapshots, not measured peaks during publication.
+
+Completed streaming-replay screenshots are versioned alongside this guide:
+
+- [Sample-level speed](screenshots/monza_2024_speed_samples.png)
+- [Spark five-second speed windows](screenshots/monza_2024_speed_windows.png)
+
+The screenshots show final results. Speed-window curves were observed
+updating during publication in the same test.
+
+### Verification limits and operational notes
+
+Four simulated coordinator checks passed: waiting for both backlog
+queries, detecting a metrics failure while events continued, rejecting
+unexpected normal termination in follow mode, and detecting a failure
+after the other query had completed. A forced-failure test of the complete
+coordinated Spark runtime has not been performed.
+
+Checkpoint restart and same-ID republication of completed-replay metrics
+were verified on 2026-11-12. Those results do not establish recovery of the
+complete coordinated pipeline after every kind of failure.
+
+An earlier attempt on 2026-11-16 exited after repeated driver heartbeat
+failures. Its initial cause was not established. Preserve the container
+and full logs when investigating another unexpected exit.
+
+Keep the Mac awake and avoid logout during the demonstration.
+A native-Hadoop fallback warning and an AQE warning appeared in successful
+runs. A `falling behind` warning means a batch exceeded the processing
+trigger interval; check continued progress and query errors rather than
+treating the trigger as a processing-time guarantee.
 
 ## Stop and restart the environment
 
 After the final batch, stop any active follow job with Ctrl+C in its
 terminal and wait for the prompt. Completed-replay jobs exit automatically.
-The `--rm` option removes the one-off Spark container when it exits.
+The `--rm` option removes a one-off Spark container when it exits.
+The coordinated procedure above omits that option so logs and exit status
+remain available. After stopping that container, review its diagnostics
+before removing it:
+
+```bash
+docker inspect \
+  --format 'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}}' \
+  "$f1_demo_container"
+docker logs --tail 60 "$f1_demo_container"
+docker rm "$f1_demo_container"
+```
+
+These commands use the container variable from terminal 2 of the coordinated
+procedure. A manual Ctrl+C can produce exit code 130. Removing the stopped
+container preserves the named data and checkpoint volumes.
+
 Check the remaining services.
 
 ```bash

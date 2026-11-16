@@ -15,10 +15,10 @@ for other systems.
 
 ## Project Status
 
-> Current phase: speed-window metrics verified for completed replays.
-> Spark stored 18 windows covering 322 speed samples. SQL reconciliation,
-> checkpoint restart, and same-ID republication passed locally.
-> Next: validate speed-window metrics during a new replay.
+> Current phase: coordinated telemetry replay verified during publication.
+> One Spark session stored events and calculated speed-window metrics.
+> SQL confirmed 647 events, 18 windows, and 322 speed samples with no
+> differences. Grafana speed-window updates were observed during publication.
 
 The repository currently includes:
 
@@ -48,7 +48,7 @@ The repository currently includes:
 - [x] Live replay visualization and completed replay review
 - [x] Spark five-second speed-window metrics for completed replays
 - [x] SQL reconciliation, checkpoint restart, and republication checks for metrics
-- [ ] Speed-window metrics verified during an in-progress replay
+- [x] Speed-window metrics verified during an in-progress replay
 - [x] Grafana display of five-second speed mean, minimum, and maximum
 
 On 2026-11-11, the replay at original pacing stored 647 events in
@@ -83,10 +83,12 @@ The batch pipeline organizes sessions, drivers, laps, sector times, stints,
 tyre compounds, and race results in PostgreSQL.
 
 The streaming pipeline publishes historical telemetry samples through Kafka
-at controlled intervals. Spark Structured Streaming writes them to TimescaleDB.
-Grafana visualizes the replay from TimescaleDB. A separate Spark job
-calculates five-second speed metrics for completed replays. Grafana displays
-their means, minima, and maxima. Validation during publication is next.
+at controlled intervals. Spark Structured Streaming stores raw events and
+calculates five-second speed metrics in TimescaleDB. The event writer can
+run both queries in one Spark session with separate checkpoints, while
+standalone metrics execution remains available. Grafana displays the raw
+speed samples and window means, minima, and maxima. Coordinated processing
+and speed-window display during publication have been verified locally.
 
 ## Project Goals
 
@@ -130,6 +132,7 @@ reads TimescaleDB through a dedicated read-only role. It includes:
 - Leclerc's speed in km/h against seconds since the first car telemetry event.
 - Stacked publication counts in five-second buckets, split into car telemetry
   events and position events.
+- Spark speed-window means, minima, and maxima for five-second event-time windows.
 
 One car telemetry event is a timestamped measurement record with fields such
 as speed, RPM, throttle, brake, and gear. One position event records spatial
@@ -138,8 +141,9 @@ events for one driver.
 
 The speed curve uses historical `event_time`. The publication chart groups
 stored events by `published_at` and follows the dashboard time picker.
-Counters and the speed curve cover the full selected replay. Publication
-buckets describe when stored events were published; they do not measure
+Counters, the raw speed curve, and speed-window metrics cover the full
+selected replay. Publication buckets describe when stored events were
+published; they do not measure
 Spark processing time or end-to-end latency. These SQL buckets are separate
 from Spark's event-time speed-window metrics.
 
@@ -149,7 +153,9 @@ original pacing. Grafana refresh, Spark's processing trigger, and the SQL
 bucket width are three independent settings, each currently five seconds.
 
 To review a completed demo, select its Replay ID and an absolute time range
-covering its publication timestamps. Automatic refresh can be turned off.
+covering its publication timestamps. Set automatic refresh to **Off** to
+stop periodic dashboard queries. This does not stop Spark or database writes.
+An absolute range keeps the publication chart's time boundaries fixed.
 An empty time range produces **No data** in the publication chart; the stored
 events remain in TimescaleDB. SQL publication timestamps are shown in UTC in
 the verified setup, while the dashboard uses the browser's time zone.
@@ -179,6 +185,13 @@ Window state grows with the unique samples in each active window; this
 approach is intended for the current small replay. The metrics query has
 its own checkpoints, separate from the raw-event writer and inspection.
 
+The event writer also accepts `--with-speed-metrics` to start event storage
+and speed aggregation in one Spark session. Each query retains its own
+checkpoint. The coordinator monitors both queries; a streaming failure or
+an unexpected query stop in follow mode fails the job and closes the
+shared session. Coordinated execution during a new replay was verified
+locally on 2026-11-16.
+
 On 2026-11-12, the completed-replay test stored **18 event-time windows**
 covering **322 speed samples**. The independent SQL check in
 `tests/sql/check_monza_speed_windows.sql` found no differences in window
@@ -189,7 +202,34 @@ and changed zero stored rows.
 
 Grafana displays these metrics in **Speed | 5-second mean, min and max**.
 Hover over the information icon beside the title for the panel description,
-or over a point for its values. Validation during a new replay is next.
+or over a point for its values.
+
+On 2026-11-16, replay `88b5ab88-949e-46e8-9eba-50ff302b4efc` was published
+at original pacing while the coordinated event and metrics queries were
+running. Kafka acknowledged all 647 events. SQL confirmed 322 car telemetry
+events, 325 position events, and 18 speed windows covering 322 samples.
+The independent comparison reported zero mismatched windows. The
+speed-window panel was observed updating during publication.
+
+### Streaming telemetry replay: dashboard snapshots
+
+These screenshots show the completed historical telemetry replay of
+Leclerc's lap 10 at Monza 2024. Kafka carried the published events, Spark
+Structured Streaming stored events and computed speed windows in
+TimescaleDB, and Grafana visualized the results. During the same test,
+the speed-window panel was observed updating as events were published.
+
+**Sample-level speed:** individual speed samples from the stored streaming
+replay, plotted against seconds since the first car telemetry sample.
+
+![Sample-level speed from the historical telemetry streaming replay](docs/screenshots/monza_2024_speed_samples.png)
+
+**Five-second speed windows:** event-time aggregates computed by Spark:
+arithmetic sample mean (blue), minimum (green), and maximum (orange).
+Each point is positioned at its window end, relative to the first car
+sample. The first and last windows may be partially filled.
+
+![Spark speed-window aggregates from the historical telemetry streaming replay](docs/screenshots/monza_2024_speed_windows.png)
 
 ## Planned Architecture
 
@@ -249,17 +289,18 @@ The project will be implemented incrementally.
 - Visualize event counts, speed, and publication buckets in Grafana
   (verified locally).
 - Calculate five-second speed-window metrics in Spark (verified locally
-  for completed replays).
+  for completed and in-progress replays).
 - Store calculated metrics in TimescaleDB (verified locally).
 - Display speed-window means, minima, and maxima in Grafana (verified locally).
-- Validate speed-window metrics during publication (planned).
+- Validate speed-window metrics during publication (verified locally).
 
 ### Phase 6: Reliability and Documentation
 
 - Test restart and recovery behavior.
 - Validate idempotent batch loads.
 - Document operational commands and troubleshooting steps.
-- Add dashboard screenshots or an animated demonstration.
+- Include dashboard screenshots (sample-level speed and speed windows included).
+- Add an animated demonstration (planned).
 
 ## Planned Technology Stack
 

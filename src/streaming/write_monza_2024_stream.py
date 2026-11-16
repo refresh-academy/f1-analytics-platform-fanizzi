@@ -6,6 +6,9 @@ from uuid import UUID
 
 import psycopg
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.streaming import StreamingQuery
+
+from aggregate_monza_2024_stream import start_speed_query
 
 from inspect_monza_2024_stream import read_monza_replay
 
@@ -25,12 +28,34 @@ INSERT_EVENTS = """
 """
 
 
+def await_queries(
+    queries: list[tuple[str, StreamingQuery]], *, follow: bool
+) -> None:
+    """Monitor every query and propagate streaming failures to the caller."""
+    pending = list(queries)
+    while pending:
+        for name, query in pending[:]:
+            # A short timeout lets us monitor both queries. Spark raises
+            # here if this query terminated with a streaming exception.
+            if query.awaitTermination(timeout=1):
+                if follow:
+                    raise RuntimeError(
+                        f"The {name} query stopped unexpectedly in follow mode."
+                    )
+                pending.remove((name, query))
+                print(f"Completed query: {name}", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--replay-id", type=UUID, required=True)
     parser.add_argument(
         "--follow", action="store_true",
         help="Keep writing new events until the query is stopped.",
+    )
+    parser.add_argument(
+        "--with-speed-metrics", action="store_true",
+        help="Run event storage and speed windows in the same Spark session.",
     )
     args = parser.parse_args()
     password = os.environ.get("TIMESCALEDB_PASSWORD")
@@ -48,6 +73,7 @@ def main() -> None:
         SparkSession.builder
         .appName("Monza2024TimescaleWriter")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.adaptive.enabled", "false")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
@@ -96,7 +122,18 @@ def main() -> None:
             .trigger(**trigger)
             .start()
         )
-        query.awaitTermination()
+        queries = [("events", query)]
+        if args.with_speed_metrics:
+            metrics_query = start_speed_query(
+                spark, replay_id, password, follow=args.follow
+            )
+            queries.append(("speed_metrics", metrics_query))
+
+        print(
+            "Started queries: " + ", ".join(name for name, _ in queries),
+            flush=True,
+        )
+        await_queries(queries, follow=args.follow)
     finally:
         spark.stop()
 
