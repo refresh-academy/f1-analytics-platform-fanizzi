@@ -3,8 +3,13 @@
 A data engineering portfolio project that combines a historical Formula 1
 data warehouse with a near-real-time telemetry replay pipeline.
 
-The project is developed as a learning and portfolio initiative within
-Refresh Academy.
+The project is developed for educational and portfolio purposes within
+Refresh Academy. It demonstrates data engineering techniques in data
+extraction, warehouse modeling, stream processing, and data-quality validation.
+
+This is an unofficial project and is not affiliated with or endorsed by
+Formula 1 or the FIA. Third-party data and materials remain subject to
+their respective rights and applicable terms of use.
 
 ## Getting Started
 
@@ -17,7 +22,6 @@ git clone https://github.com/refresh-academy/f1-analytics-platform-fanizzi.git
 cd f1-analytics-platform-fanizzi
 ```
 
-While the repository is private, cloning requires repository access.
 Run the remaining project commands from this directory.
 
 ### Prepare the local environment and inputs
@@ -52,7 +56,7 @@ for other systems.
 
 The repository currently includes:
 
-- [x] Git, private GitHub repository, Python 3.13, and uv
+- [x] Git, GitHub repository, Python 3.13, and uv
 - [x] Initial repository structure
 - [x] FastF1 extraction of the Monza 2024 race
 - [x] Raw and processed Parquet datasets, kept outside version control
