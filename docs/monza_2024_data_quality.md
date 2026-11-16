@@ -85,8 +85,48 @@ The first-to-last event-time span was 84.135 seconds; the corresponding
 producer publication-time span was 84.139 seconds. These observations
 describe this run and do not measure individual event latency.
 
-The verification covers the local single-broker sample replay.
-Spark processing, database sinks, and streaming dashboards remain pending.
+The verification above covers the local single-broker sample replay
+tested on 2026-11-05. Subsequent pipeline checks are summarized below.
+
+## Streaming storage and speed-window validation
+
+On 2026-11-16, replay `88b5ab88-949e-46e8-9eba-50ff302b4efc` was published
+at original pacing while raw-event storage and speed aggregation ran as
+independent queries in one Spark session. Kafka acknowledged 647 events
+in partition 0, at offsets 6474 through 7120.
+
+| Check | Result |
+|---|---:|
+| Stored raw events | 647 |
+| Stored car telemetry events | 322 |
+| Stored position events | 325 |
+| Expected / stored five-second windows | 18 / 18 |
+| Expected / stored speed samples | 322 / 322 |
+| Mismatched windows | 0 |
+
+The independent [SQL reconciliation](../tests/sql/check_monza_speed_windows.sql)
+groups stored car telemetry with epoch-aligned five-second intervals.
+It compares window coverage, interval ends, sample counts, means, minima,
+and maxima. The comparison passed, using a mean-speed tolerance of
+`1e-9` km/h.
+
+Grafana's speed-window panel was observed updating during publication.
+The screenshots linked from the README show the completed replay.
+
+Event storage and metric updates commit independently. Grafana can refresh
+between those commits, so final reconciliation must wait for both queries
+to process the published events.
+
+The metrics use historical event time and arithmetic sample means.
+Stored rows contain the latest-known aggregates; their presence does not
+mean every window has been finalized by the ten-second event-time watermark.
+
+These results establish consistency between stored raw events and computed
+metrics for this sample. They do not independently establish the accuracy
+of the source measurements or remove the sampling limitations noted above.
+
+See the [local run order](run_order.md) for commands, observed resource
+usage, coordinator checks, and remaining verification limits.
 
 ## Reference
 

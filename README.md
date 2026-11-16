@@ -105,14 +105,51 @@ and speed-window display during publication have been verified locally.
 
 ## Data Sources
 
-The batch warehouse uses a previously acquired FastF1 snapshot of Monza
-2024. The replay sample uses OpenF1 car telemetry and positions for
-Leclerc, lap 10, from the same race. Separate raw Parquet files and a
-local manifest preserve the sample's source and extraction details.
+The project acquires historical Formula 1 data through two routes:
 
-New FastF1 archive downloads require authenticated access; see the
+| Workflow | Acquisition route | Data used |
+|---|---|---|
+| Batch warehouse | [FastF1 Python library](https://docs.fastf1.dev/) | Monza 2024 race laps, sector times, tyre information, driver details, and race results |
+| Streaming replay | [OpenF1 HTTP API](https://openf1.org/docs/) | Car telemetry and position samples for Leclerc, driver 16, around lap 10 of the same race |
+
+### Batch acquisition through FastF1
+
+The batch extraction scripts use FastF1 to load the race session and save
+`session.laps` and `session.results` as raw Parquet files. FastF1 is the
+Python access library; its GitHub repository hosts the library's source code.
+
+- [Lap extraction](src/extraction/extract_monza_2024_laps.py)
+- [Race-result extraction](src/extraction/extract_monza_2024_results.py)
+
+The verified batch snapshot contains 1,008 lap records from 20 drivers.
+The project's transformations derive 50 stint records from those laps.
+
+### Telemetry acquisition through OpenF1
+
+The [telemetry extractor](src/extraction/extract_monza_2024_telemetry_sample.py)
+queries the `laps`, `car_data`, and `location` endpoints under
+`https://api.openf1.org/v1`. It selects session `9590`, driver `16`, and
+lap `10`. The lap's reported start and duration define the sampling window;
+OpenF1 describes lap start timestamps as approximate.
+
+The preserved sample contains 322 car telemetry records and 325 position
+records. A local `manifest.json` records the API base URL, extraction time,
+source lap record, query filters, and row counts. Speed-window sample
+counts, means, minima, and maxima are calculated by this project's Spark
+pipeline from the source speed samples.
+
+### Data availability and reproduction
+
+Raw Parquet files, processed datasets, and download caches are kept locally
+and excluded from Git. Cloning this repository provides the extraction and
+processing code, but does not provide those local data files.
+
+The verified batch rebuild reused the preserved local snapshot. New FastF1
+timing-archive downloads require authenticated access; see the
 [FastF1 archive access update](https://github.com/theOehrly/Fast-F1/issues/978).
-The OpenF1 sample was acquired through its historical API.
+The current batch extraction scripts do not include an authentication
+setup, and fresh authenticated acquisition has not been verified with this
+repository. The OpenF1 sample was acquired through its historical API.
 
 The streaming component uses historical replay. Previously recorded telemetry
 samples are published at controlled intervals to simulate data arriving from
@@ -231,7 +268,7 @@ sample. The first and last windows may be partially filled.
 
 ![Spark speed-window aggregates from the historical telemetry streaming replay](docs/screenshots/monza_2024_speed_windows.png)
 
-## Planned Architecture
+## Implemented Architecture
 
 ```mermaid
 flowchart TD
@@ -302,7 +339,7 @@ The project will be implemented incrementally.
 - Include dashboard screenshots (sample-level speed and speed windows included).
 - Add an animated demonstration (planned).
 
-## Planned Technology Stack
+## Technology Stack
 
 | Area | Technology |
 |---|---|

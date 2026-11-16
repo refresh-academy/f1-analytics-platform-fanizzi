@@ -11,8 +11,52 @@ OpenF1 telemetry sample.
 
 ## 0. Start the environment
 
-The ignored `.env` file must define `POSTGRES_PASSWORD`. Run commands from
-the repository root.
+Run commands from the repository root. The versioned `.env.example`
+lists the three database-password variables used by this project.
+The populated `.env` remains local and ignored by Git.
+
+For a new installation only, the following command creates `.env` from
+the template and fills its password entries with generated values.
+An existing `.env` is preserved.
+
+If database volumes already exist but `.env` has been lost, recover the
+original credentials instead. Changing environment values does not reset
+passwords in initialized database volumes.
+
+```bash
+uv run --no-project python - <<'PY'
+from pathlib import Path
+import secrets
+
+target = Path(".env")
+if target.exists():
+    print("Existing .env kept unchanged.")
+else:
+    content = Path(".env.example").read_text(encoding="utf-8")
+    for name in [
+        "POSTGRES_PASSWORD",
+        "TIMESCALEDB_PASSWORD",
+        "GRAFANA_TELEMETRY_PASSWORD",
+    ]:
+        expected = f"{name}=\n"
+        if content.count(expected) != 1:
+            raise SystemExit(f"Unexpected template entry: {name}")
+        content = content.replace(
+            expected, f"{name}={secrets.token_hex(24)}\n", 1
+        )
+    with target.open("x", encoding="utf-8") as output:
+        output.write(content)
+    print("Created local .env with generated database passwords.")
+PY
+```
+
+`POSTGRES_PASSWORD` configures the batch database administrator.
+`TIMESCALEDB_PASSWORD` configures the telemetry database administrator.
+During the Grafana reader setup below, assign the value of
+`GRAFANA_TELEMETRY_PASSWORD` to the `grafana_telemetry_reader` database role.
+The Grafana web sign-in password is a separate credential.
+
+With the local configuration available, start PostgreSQL:
 
 ```bash
 uv sync
@@ -52,8 +96,9 @@ docker compose exec -T postgres createdb -U f1_admin f1_analytics_smoke
 export F1_DB_NAME=f1_analytics_smoke
 ```
 
-Define `run_sql` as shown above in the same terminal. Before running
-steps 1 through 7, verify the database selected by both tools:
+Define `run_sql` as shown above in the same terminal. When reusing the
+preserved raw snapshot, run steps 2 through 7 and skip the source-download
+commands in step 1. Before loading, verify the database selected by both tools:
 
 ```bash
 docker compose exec -T postgres psql -P pager=off -U f1_admin -d "$F1_DB_NAME" -c 'SELECT current_database();'
@@ -72,6 +117,41 @@ The original `f1_analytics` database still contained 1,008 lap facts
 and 50 stint facts. This does not verify setup on another computer.
 
 ## 1. Extract source data
+
+### Reuse an existing snapshot
+
+The verified batch rebuild starts from these preserved raw files:
+
+- `data/raw/monza_2024_race_laps.parquet`
+- `data/raw/monza_2024_race_results.parquet`
+
+If these files are available, continue with step 2. Transformation and
+warehouse loading read them locally and do not request a new FastF1 download.
+
+The streaming replay uses a separate preserved OpenF1 snapshot under
+`data/raw/openf1_monza_2024_leclerc_lap_10/`, containing
+`car_data.parquet`, `location.parquet`, and `manifest.json`.
+Once acquired, publishing that replay does not require another API request.
+
+Raw files, processed datasets, and caches are excluded from Git.
+Keep a separate backup of the source snapshots, including the OpenF1
+manifest. A ZIP produced by `git archive` contains versioned project files;
+it does not back up those datasets, the local `.env`, database volumes,
+or Spark checkpoints.
+
+### Original batch acquisition path
+
+The commands below document the original FastF1 acquisition path.
+New timing-archive downloads require authenticated access. The current
+scripts do not include an authentication setup, and fresh authenticated
+acquisition has not been verified with this repository.
+See the [README data sources](../README.md#data-sources).
+
+The batch extraction scripts write their raw output paths directly.
+Reuse existing snapshots for a rebuild rather than rerunning extraction
+over the preserved files.
+
+Original extraction commands:
 
 ```bash
 uv run python src/extraction/extract_monza_2024_laps.py
